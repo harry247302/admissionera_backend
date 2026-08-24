@@ -21,9 +21,10 @@ app.use(cookieParser());
 app.use('/api', routes);
 
 
-app.use((_req, res) => {
-  res.status(404).json({ message: 'Route not found' });
+app.use('/', (req, res) => {
+  res.send('Hello World');
 });
+
 
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);

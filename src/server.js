@@ -4,7 +4,7 @@ const { connect } = require('./config/db');
 
 const startServer = () =>
   new Promise((resolve, reject) => {
-    const server = app.listen(env.port, () => {
+    const server = app.listen(5005, () => {
       console.log(`Server running on http://localhost:${env.port}`);
       resolve(server);
     });
@@ -14,7 +14,10 @@ const startServer = () =>
 
 const start = async () => {
   try {
-    await connect();
+    const a = await connect();
+    if(a) {
+      console.log('Database connected');
+    }
     await startServer();
   } catch (err) {
     const detail = err.message || err.code || String(err);

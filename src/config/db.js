@@ -3,7 +3,7 @@ const env = require('./env');
 
 const pool = new Pool({
   host: env.db.host,
-  port: env.db.port,
+  port: env.db.port || 5432,
   database: env.db.name,
   user: env.db.user,
   password: env.db.password,

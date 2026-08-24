@@ -22,7 +22,8 @@ const clearAuthCookie = (res) => {
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-
+    console.log(name, email, password,'name, email, password');
+    console.log(req.body,'req.body');
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required' });
     }
