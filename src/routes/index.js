@@ -1,6 +1,7 @@
 const express = require('express');
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
+const academicRouter = require('./academicRoutes');
 
 const router = express.Router();
 
@@ -11,5 +12,6 @@ router.get('/health', (_req, res) => {
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/crm', require('./crmRoutes'));
+router.use('/academic', academicRouter);
 
 module.exports = router;

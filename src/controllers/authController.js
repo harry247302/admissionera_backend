@@ -1,4 +1,6 @@
-  const env = require('../config/env');
+const bcrypt = require('bcryptjs');
+const env = require('../config/env');
+const { query } = require('../config/db');
 const { signToken } = require('../utils/jwt');
 const User = require('../models/User');
 
@@ -60,12 +62,20 @@ const login = async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    const user = await User.findByEmail(email);
+    const { rows } = await query(
+      `SELECT id, name, email, password_hash, role, created_at, updated_at
+       FROM users
+       WHERE LOWER(email) = LOWER($1)
+       LIMIT 1`,
+      [String(email).trim()]
+    );
+
+    const user = rows[0];
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
 
-    const isValid = await User.comparePassword(password, user.password_hash);
+    const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -73,17 +83,15 @@ const login = async (req, res) => {
     const token = signToken({ id: user.id, email: user.email, role: user.role });
     setAuthCookie(res, token);
 
-    const { password_hash, ...publicUser } = user;
-
     return res.json({
       message: 'Login successful',
       user: {
-        id: publicUser.id,
-        name: publicUser.name,
-        email: publicUser.email,
-        role: publicUser.role,
-        createdAt: publicUser.created_at,
-        updatedAt: publicUser.updated_at,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
       },
     });
   } catch (err) {

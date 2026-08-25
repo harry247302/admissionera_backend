@@ -21,7 +21,10 @@ app.use(cookieParser());
 app.use('/api', routes);
 
 
-app.use('/', (req, res) => {
+app.use((req, res) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ message: 'Not found' });
+  }
   res.send('Hello World');
 });
 

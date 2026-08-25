@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const env = {
-  port: parseInt(process.env.PORT, 10) || 5000,
+  port: parseInt(process.env.PORT, 10) || 5005,
   nodeEnv: process.env.NODE_ENV || 'development',
   db: {
     host: process.env.DB_HOST || 'localhost',
