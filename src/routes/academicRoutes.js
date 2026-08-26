@@ -8,8 +8,8 @@ const academicRouter = express.Router();
 
 academicRouter.use(authenticate);
 
-academicRouter.get('/universities', getUniversities);
-academicRouter.post('/universities',createUniversity);
+academicRouter.get('/universities', universityController.getUniversities);
+academicRouter.post('/universities', universityController.createUniversity);
 academicRouter.get('/courses', courseController.getCourses);
 academicRouter.post('/courses', courseController.createCourse);
 academicRouter.post('/specializations', specializationController.createSpecialization);
