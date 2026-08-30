@@ -2,14 +2,15 @@ const { pool } = require('../config/db');
 
 const mapUniversity = (row) => ({
   id: row.id,
+  uuid: row.uuid,
   name: row.name,
-  code: row.short_name || '',
+  code: row.short_name || row.code || '',
   short_name: row.short_name,
   type: row.type || '',
   location: row.location || '',
   website: row.website || '',
   description: row.description || '',
-  status: 'ACTIVE',
+  status: row.is_active === false ? 'INACTIVE' : 'ACTIVE',
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });

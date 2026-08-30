@@ -10,14 +10,24 @@ const academicRouter = express.Router();
 
 academicRouter.get('/universities', universityController.getUniversities);
 academicRouter.post('/universities', universityController.createUniversity);
-academicRouter.get('/courses', courseController.getCourses);
+
+// academicRouter.get('/courses', courseController.getCourses);
 academicRouter.post('/courses', courseController.createCourse);
 academicRouter.get('/courses/:uuid', courseController.getCourseById);
 academicRouter.put('/courses/:uuid', courseController.updateCourse);
 academicRouter.delete('/courses/:uuid', courseController.deleteCourse);
-academicRouter.get('/university-courses', courseController.getUniversityCourses);
-academicRouter.post('/university-courses', courseController.createUniversityCourse);
+
+academicRouter.get('/courses', courseController.getCourses);
+academicRouter.post('/courses-specilizations', courseController.createCourseSpecializations);
+
+academicRouter.get('/specializations', specializationController.getSpecializations);
 academicRouter.post('/specializations', specializationController.createSpecialization);
-academicRouter.post('/university-specializations', specializationController.universitySpecilization);
+academicRouter.put('/specializations/:uuid', specializationController.updateSpecialization);
+academicRouter.delete('/specializations/:uuid', specializationController.deleteSpecialization);
+
+// academicRouter.get('/university-specializations', specializationController.getUniversitySpecializations);
+// academicRouter.post('/university-specializations', specializationController.universitySpecilization);
+
+
 
 module.exports = academicRouter;

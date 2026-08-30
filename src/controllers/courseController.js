@@ -11,33 +11,21 @@ const mapCourse = (row) => ({
   code: row.code || '',
   degree: row.degree || '',
   level: row.level || row.degree || '',
-  duration: row.duration,
-  durationUnit: row.duration_unit || 'YEARS',
-  numberOfSemesters: row.duration_unit === 'SEMESTERS' ? Number(row.duration) : null,
-  numberOfYears: row.duration_unit === 'YEARS' ? Number(row.duration) : null,
   description: row.description || '',
+  overview: row.overview || '',
   eligibility: row.eligibility || '',
+  curriculum: row.curriculum || '',
+  careerOpportunities: row.career_opportunities || '',
+  currency: row.currency || 'USD',
+  department: row.department || '',
+  faculty: row.faculty || '',
+  studyMode: row.study_mode || '',
+  attendanceMode: row.attendance_mode || '',
+  language: row.language || '',
   status: row.is_active === false ? 'INACTIVE' : 'ACTIVE',
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
-
-const parseDuration = (duration, durationUnit) => {
-  if (duration == null || duration === '') {
-    return { value: null, unit: durationUnit || null };
-  }
-  if (typeof duration === 'string' && /[a-zA-Z]/.test(duration)) {
-    const [amount, ...unitParts] = duration.trim().split(/\s+/);
-    return {
-      value: Number(amount) || null,
-      unit: durationUnit || unitParts.join('_').toUpperCase() || 'YEARS',
-    };
-  }
-  return {
-    value: Number(duration),
-    unit: durationUnit || 'YEARS',
-  };
-};
 
 const createCourse = async (req, res) => {
   try {
@@ -49,27 +37,17 @@ const createCourse = async (req, res) => {
       degree,
       level,
       code,
-      duration,
-      duration_unit,
-      durationUnit,
       description,
       overview,
       eligibility,
-      admission_requirements,
-      application_process,
       curriculum,
-      specialization,
       career_opportunities,
-      tuition_fee,
-      application_fee,
       currency,
       department,
       faculty,
       study_mode,
       attendance_mode,
-      intake,
       language,
-      course_url,
       is_active,
       status,
     } = req.body;
@@ -101,21 +79,16 @@ const createCourse = async (req, res) => {
       }
     }
 
-    const parsedDuration = parseDuration(duration, duration_unit || durationUnit);
-
     const result = await pool.query(
       `
       INSERT INTO courses (
-        name, degree, level, code, duration, duration_unit,
-        description, overview, eligibility, admission_requirements,
-        application_process, curriculum, specialization, career_opportunities,
-        tuition_fee, application_fee, currency, department, faculty,
-        study_mode, attendance_mode, intake, language, course_url, is_active
+        name, degree, level, code,
+        description, overview, eligibility, curriculum, career_opportunities,
+        currency, department, faculty, study_mode, attendance_mode, language, is_active
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-        $21, $22, $23, $24, $25
+        $11, $12, $13, $14, $15, $16
       )
       RETURNING *
       `,
@@ -124,26 +97,17 @@ const createCourse = async (req, res) => {
         degree || level || null,
         level || degree || null,
         code || null,
-        parsedDuration.value,
-        parsedDuration.unit,
         description || null,
         overview || null,
         eligibility || null,
-        admission_requirements || null,
-        application_process || null,
         curriculum || null,
-        specialization || null,
         career_opportunities || null,
-        tuition_fee || null,
-        application_fee || null,
         currency || 'USD',
         department || null,
         faculty || null,
         study_mode || null,
         attendance_mode || null,
-        intake || null,
         language || null,
-        course_url || null,
         status ? status === 'ACTIVE' : is_active !== undefined ? is_active : true,
       ]
     );
@@ -193,82 +157,6 @@ const createCourse = async (req, res) => {
   }
 };
 
-const getCourses = async (req, res) => {
-  try {
-    const { search = '', universityId, university_id, page = 1, limit = 50 } = req.query;
-    const uniId = universityId || university_id;
-    const pageNum = Math.max(1, Number(page) || 1);
-    const pageSize = Math.max(1, Number(limit) || 50);
-    const offset = (pageNum - 1) * pageSize;
-    const params = [];
-    const where = ['c.is_deleted = false'];
-
-    if (uniId) {
-      params.push(String(uniId));
-      where.push(`(u.id::text = $${params.length} OR u.uuid::text = $${params.length})`);
-    }
-    if (search) {
-      params.push(`%${search}%`);
-      where.push(`(
-        c.name ILIKE $${params.length}
-        OR COALESCE(c.code, '') ILIKE $${params.length}
-        OR COALESCE(c.level, '') ILIKE $${params.length}
-        OR COALESCE(u.name, '') ILIKE $${params.length}
-      )`);
-    }
-
-    const whereSql = `WHERE ${where.join(' AND ')}`;
-
-    const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM courses c
-       LEFT JOIN university_courses uc ON uc.course_uuid = c.uuid
-       LEFT JOIN universities u ON u.uuid = uc.university_uuid AND u.is_deleted = false
-       ${whereSql}`,
-      params
-    );
-    const total = countResult.rows[0].total;
-
-    const result = await pool.query(
-      `SELECT
-         c.*,
-         u.id AS university_id,
-         u.uuid AS university_uuid,
-         u.name AS university_name,
-         COALESCE(u.code, u.short_name) AS university_code
-       FROM courses c
-       LEFT JOIN university_courses uc ON uc.course_uuid = c.uuid
-       LEFT JOIN universities u ON u.uuid = uc.university_uuid AND u.is_deleted = false
-       ${whereSql}
-       ORDER BY c.created_at DESC
-       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, pageSize, offset]
-    );
-
-    const courses = result.rows.map(mapCourse);
-
-    return res.status(200).json({
-      success: true,
-      count: courses.length,
-      courses,
-      data: courses,
-      pagination: {
-        total,
-        page: pageNum,
-        limit: pageSize,
-        pages: Math.max(1, Math.ceil(total / pageSize)),
-      },
-    });
-  } catch (error) {
-    console.error('Get courses error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch courses',
-      error: error.message,
-    });
-  }
-};
 
 const getCourseById = async (req, res) => {
   try {
@@ -338,35 +226,20 @@ const updateCourse = async (req, res) => {
       degree,
       level,
       code,
-      duration,
-      duration_unit,
-      durationUnit,
       description,
       overview,
       eligibility,
-      admission_requirements,
-      application_process,
       curriculum,
-      specialization,
       career_opportunities,
-      tuition_fee,
-      application_fee,
       currency,
       department,
       faculty,
       study_mode,
       attendance_mode,
-      intake,
       language,
-      course_url,
       is_active,
       status,
     } = req.body;
-
-    const parsedDuration = parseDuration(
-      duration ?? current.duration,
-      duration_unit || durationUnit || current.duration_unit
-    );
 
     const result = await pool.query(
       `
@@ -376,29 +249,20 @@ const updateCourse = async (req, res) => {
         degree = $2,
         level = $3,
         code = $4,
-        duration = $5,
-        duration_unit = $6,
-        description = $7,
-        overview = $8,
-        eligibility = $9,
-        admission_requirements = $10,
-        application_process = $11,
-        curriculum = $12,
-        specialization = $13,
-        career_opportunities = $14,
-        tuition_fee = $15,
-        application_fee = $16,
-        currency = $17,
-        department = $18,
-        faculty = $19,
-        study_mode = $20,
-        attendance_mode = $21,
-        intake = $22,
-        language = $23,
-        course_url = $24,
-        is_active = $25,
+        description = $5,
+        overview = $6,
+        eligibility = $7,
+        curriculum = $8,
+        career_opportunities = $9,
+        currency = $10,
+        department = $11,
+        faculty = $12,
+        study_mode = $13,
+        attendance_mode = $14,
+        language = $15,
+        is_active = $16,
         updated_at = CURRENT_TIMESTAMP
-      WHERE uuid = $26
+      WHERE uuid = $17
         AND is_deleted = false
       RETURNING *
       `,
@@ -407,26 +271,17 @@ const updateCourse = async (req, res) => {
         degree ?? level ?? current.degree,
         level ?? degree ?? current.level,
         code ?? current.code,
-        parsedDuration.value,
-        parsedDuration.unit,
         description ?? current.description,
         overview ?? current.overview,
         eligibility ?? current.eligibility,
-        admission_requirements ?? current.admission_requirements,
-        application_process ?? current.application_process,
         curriculum ?? current.curriculum,
-        specialization ?? current.specialization,
         career_opportunities ?? current.career_opportunities,
-        tuition_fee ?? current.tuition_fee,
-        application_fee ?? current.application_fee,
         currency ?? current.currency,
         department ?? current.department,
         faculty ?? current.faculty,
         study_mode ?? current.study_mode,
         attendance_mode ?? current.attendance_mode,
-        intake ?? current.intake,
         language ?? current.language,
-        course_url ?? current.course_url,
         status ? status === 'ACTIVE' : is_active ?? current.is_active,
         uuid,
       ]
@@ -543,152 +398,102 @@ const deleteCourse = async (req, res) => {
   }
 };
 
-const createUniversityCourse = async (req, res) => {
-  const { university_uuid, course_uuid } = req.body;
+const createCourseSpecializations = async (req, res) => {
+  const { course_uuid, specialization_uuids } = req.body;
 
-  if (!university_uuid || !course_uuid) {
+  if (!course_uuid || !Array.isArray(specialization_uuids) || !specialization_uuids.length) {
     return res.status(400).json({
       success: false,
-      message: 'university_uuid and course_uuid are required',
+      message: 'course_uuid and specialization_uuids are required',
     });
   }
 
-  const client = await pool.connect();
-
   try {
-    await client.query('BEGIN');
-
-    const university = await client.query(
-      'SELECT uuid FROM universities WHERE uuid = $1 AND is_deleted = false',
-      [university_uuid]
-    );
-
-    if (university.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'University not found',
-      });
-    }
-
-    const course = await client.query(
-      'SELECT uuid FROM courses WHERE uuid = $1 AND is_deleted = false',
-      [course_uuid]
-    );
-
-    if (course.rows.length === 0) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({
-        success: false,
-        message: 'Course not found',
-      });
-    }
-
-    const result = await client.query(
+    const result = await pool.query(
       `
-      INSERT INTO university_courses
-      (university_uuid, course_uuid)
-      VALUES ($1, $2)
-      RETURNING *
+      INSERT INTO course_specializations (
+        course_uuid,
+        specialization_uuid
+      )
+      SELECT $1, unnest($2::uuid[])
+      ON CONFLICT (course_uuid, specialization_uuid)
+      DO NOTHING
       `,
-      [university_uuid, course_uuid]
+      [course_uuid, specialization_uuids]
     );
-
-    await client.query('COMMIT');
 
     return res.status(201).json({
       success: true,
-      message: 'University course created successfully',
-      data: result.rows[0],
+      message: 'Course specializations linked successfully',
+      data: {
+        course_uuid,
+        assignedSpecializations: result.rowCount,
+      },
     });
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Create university course error:', error);
-
-    if (error.code === '23505') {
-      return res.status(409).json({
-        success: false,
-        message: 'University course already exists',
-      });
-    }
+    console.error('Create course specializations error:', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Failed to create university course',
+      message: 'Failed to link course specializations',
     });
-  } finally {
-    client.release();
   }
 };
-
-const getUniversityCourses = async (req, res) => {
+const getCourses = async (req, res) => {
   try {
-    const { university_uuid, course_uuid } = req.query;
-    const params = [];
-    const filters = [];
-
-    if (university_uuid) {
-      params.push(university_uuid);
-      filters.push(`uc.university_uuid = $${params.length}`);
-    }
-
-    if (course_uuid) {
-      params.push(course_uuid);
-      filters.push(`uc.course_uuid = $${params.length}`);
-    }
-
-    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-
-    const result = await pool.query(
-      `
+    const result = await pool.query(`
       SELECT
-        uc.university_uuid,
-        uc.course_uuid,
-        uc.created_at,
-        to_jsonb(u) AS university,
-        to_jsonb(c) AS course,
-        COALESCE((
-          SELECT json_agg(to_jsonb(s) ORDER BY s.name)
-          FROM course_specializations cs
-          JOIN specializations s
-            ON s.uuid = cs.specialization_uuid
-           AND s.is_deleted = false
-          WHERE cs.course_uuid = uc.course_uuid
-        ), '[]'::json) AS specializations
-      FROM university_courses uc
-      JOIN universities u
-        ON u.uuid = uc.university_uuid
-       AND u.is_deleted = false
-      JOIN courses c
-        ON c.uuid = uc.course_uuid
-       AND c.is_deleted = false
-      ${where}
-      ORDER BY uc.created_at DESC
-      `,
-      params
-    );
+        c.*,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'uuid', s.uuid,
+              'name', s.name,
+              'code', s.code,
+              'description', s.description
+            )
+            ORDER BY s.name
+          ) FILTER (WHERE s.uuid IS NOT NULL),
+          '[]'::json
+        ) AS specializations
+
+      FROM courses c
+
+      LEFT JOIN course_specializations cs
+        ON cs.course_uuid = c.uuid
+
+      LEFT JOIN specializations s
+        ON s.uuid = cs.specialization_uuid
+        AND s.is_deleted = false
+
+      WHERE c.is_deleted = false
+
+      GROUP BY c.uuid
+
+      ORDER BY c.created_at DESC
+    `);
 
     return res.status(200).json({
       success: true,
       count: result.rows.length,
       data: result.rows,
     });
+
   } catch (error) {
-    console.error('Get university courses error:', error);
+    console.error('Get all courses error:', error);
 
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch university courses',
+      message: 'Failed to fetch courses',
     });
   }
 };
-
 module.exports = {
   createCourse,
   getCourses,
   getCourseById,
   updateCourse,
   deleteCourse,
-  createUniversityCourse,
-  getUniversityCourses,
+  createCourseSpecializations,
+  
 };
