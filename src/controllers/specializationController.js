@@ -404,6 +404,451 @@ const universitySpecilization = async (req, res) => {
   }
 };
 
+const FEE_STRUCTURE_TYPES = new Set(['yearly', 'semester', 'one_time']);
+
+const COURSE_FEE_COLUMNS = `
+  uuid, university_id, course_id, specialization_id,
+  fee_structure_type, total_periods, period_number, period_label,
+  amount, currency, created_at, updated_at
+`;
+
+const normalizeFeeStructureType = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (FEE_STRUCTURE_TYPES.has(normalized)) return normalized;
+  if (normalized === 'year') return 'yearly';
+  if (normalized === 'one-time' || normalized === 'onetime') return 'one_time';
+  return normalized;
+};
+
+const resolveUniversityUuid = async (ref) => {
+  if (!ref) return null;
+  const result = await pool.query(
+    `SELECT uuid FROM universities
+     WHERE is_deleted = false
+       AND (uuid::text = $1 OR id::text = $1)
+     LIMIT 1`,
+    [String(ref)]
+  );
+  return result.rows[0]?.uuid || null;
+};
+
+const resolveCourseUuid = async (ref) => {
+  if (!ref) return null;
+  const result = await pool.query(
+    `SELECT uuid FROM courses
+     WHERE is_deleted = false
+       AND uuid::text = $1
+     LIMIT 1`,
+    [String(ref)]
+  );
+  return result.rows[0]?.uuid || null;
+};
+
+const resolveSpecializationUuid = async (ref) => {
+  if (!ref) return null;
+  const result = await pool.query(
+    `SELECT uuid FROM specializations
+     WHERE is_deleted = false
+       AND (uuid::text = $1 OR id::text = $1)
+     LIMIT 1`,
+    [String(ref)]
+  );
+  return result.rows[0]?.uuid || null;
+};
+
+const createCourseFee = async (req, res) => {
+  try {
+    const {
+      university_id,
+      universityId,
+      course_id,
+      courseId,
+      specialization_id,
+      specializationId,
+      fee_structure_type,
+      feeStructureType,
+      total_periods,
+      totalPeriods,
+      period_number,
+      periodNumber,
+      period_label,
+      periodLabel,
+      amount,
+      currency = 'INR',
+    } = req.body;
+
+    const universityRef = university_id || universityId;
+    const courseRef = course_id || courseId;
+    const specializationRef = specialization_id || specializationId;
+    const structureType = normalizeFeeStructureType(fee_structure_type || feeStructureType);
+    const periods = total_periods ?? totalPeriods ?? null;
+    const periodNo = period_number ?? periodNumber ?? null;
+    const label = period_label ?? periodLabel ?? null;
+
+    if (!universityRef) {
+      return res.status(400).json({
+        success: false,
+        message: 'university_id is required',
+      });
+    }
+
+    if (!courseRef) {
+      return res.status(400).json({
+        success: false,
+        message: 'course_id is required',
+      });
+    }
+
+    if (!specializationRef) {
+      return res.status(400).json({
+        success: false,
+        message: 'specialization_id is required',
+      });
+    }
+
+    if (!structureType || !FEE_STRUCTURE_TYPES.has(structureType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'fee_structure_type must be yearly, semester, or one_time',
+      });
+    }
+
+    if (amount === undefined || amount === null || amount === '' || Number.isNaN(Number(amount))) {
+      return res.status(400).json({
+        success: false,
+        message: 'amount is required',
+      });
+    }
+
+    const universityUuid = await resolveUniversityUuid(universityRef);
+    if (!universityUuid) {
+      return res.status(404).json({
+        success: false,
+        message: 'University not found',
+      });
+    }
+
+    const courseUuid = await resolveCourseUuid(courseRef);
+    if (!courseUuid) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    const specializationUuid = await resolveSpecializationUuid(specializationRef);
+    if (!specializationUuid) {
+      return res.status(404).json({
+        success: false,
+        message: 'Specialization not found',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO course_fees (
+        university_id,
+        course_id,
+        specialization_id,
+        fee_structure_type,
+        total_periods,
+        period_number,
+        period_label,
+        amount,
+        currency
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING ${COURSE_FEE_COLUMNS}
+      `,
+      [
+        universityUuid,
+        courseUuid,
+        specializationUuid,
+        structureType,
+        periods === '' || periods == null ? null : Number(periods),
+        periodNo === '' || periodNo == null ? null : Number(periodNo),
+        label || null,
+        Number(amount),
+        currency || 'INR',
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Course fee created successfully',
+      data: result.rows[0],
+      fee: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Create Course Fee Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create course fee',
+      error: error.message,
+    });
+  }
+};
+
+const updateCourseFee = async (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const {
+      university_id,
+      universityId,
+      course_id,
+      courseId,
+      specialization_id,
+      specializationId,
+      fee_structure_type,
+      feeStructureType,
+      total_periods,
+      totalPeriods,
+      period_number,
+      periodNumber,
+      period_label,
+      periodLabel,
+      amount,
+      currency,
+    } = req.body;
+
+    const existing = await pool.query(
+      `SELECT * FROM course_fees WHERE uuid = $1`,
+      [uuid]
+    );
+
+    if (existing.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course fee not found',
+      });
+    }
+
+    const current = existing.rows[0];
+
+    let nextUniversityId = current.university_id;
+    const universityRef = university_id || universityId;
+    if (universityRef !== undefined && universityRef !== null && universityRef !== '') {
+      const resolved = await resolveUniversityUuid(universityRef);
+      if (!resolved) {
+        return res.status(404).json({
+          success: false,
+          message: 'University not found',
+        });
+      }
+      nextUniversityId = resolved;
+    }
+
+    let nextCourseId = current.course_id;
+    const courseRef = course_id || courseId;
+    if (courseRef !== undefined && courseRef !== null && courseRef !== '') {
+      const resolved = await resolveCourseUuid(courseRef);
+      if (!resolved) {
+        return res.status(404).json({
+          success: false,
+          message: 'Course not found',
+        });
+      }
+      nextCourseId = resolved;
+    }
+
+    let nextSpecializationId = current.specialization_id;
+    const specializationRef = specialization_id || specializationId;
+    if (specializationRef !== undefined && specializationRef !== null && specializationRef !== '') {
+      const resolved = await resolveSpecializationUuid(specializationRef);
+      if (!resolved) {
+        return res.status(404).json({
+          success: false,
+          message: 'Specialization not found',
+        });
+      }
+      nextSpecializationId = resolved;
+    }
+
+    let nextStructureType = current.fee_structure_type;
+    const rawStructureType = fee_structure_type ?? feeStructureType;
+    if (rawStructureType !== undefined) {
+      const normalized = normalizeFeeStructureType(rawStructureType);
+      if (!normalized || !FEE_STRUCTURE_TYPES.has(normalized)) {
+        return res.status(400).json({
+          success: false,
+          message: 'fee_structure_type must be yearly, semester, or one_time',
+        });
+      }
+      nextStructureType = normalized;
+    }
+
+    const nextTotalPeriods =
+      total_periods !== undefined || totalPeriods !== undefined
+        ? (total_periods ?? totalPeriods)
+        : current.total_periods;
+    const nextPeriodNumber =
+      period_number !== undefined || periodNumber !== undefined
+        ? (period_number ?? periodNumber)
+        : current.period_number;
+    const nextPeriodLabel =
+      period_label !== undefined || periodLabel !== undefined
+        ? (period_label ?? periodLabel)
+        : current.period_label;
+    const nextAmount = amount !== undefined ? amount : current.amount;
+    const nextCurrency = currency !== undefined ? currency : current.currency;
+
+    if (nextAmount === null || nextAmount === '' || Number.isNaN(Number(nextAmount))) {
+      return res.status(400).json({
+        success: false,
+        message: 'amount is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE course_fees
+      SET
+        university_id = $2,
+        course_id = $3,
+        specialization_id = $4,
+        fee_structure_type = $5,
+        total_periods = $6,
+        period_number = $7,
+        period_label = $8,
+        amount = $9,
+        currency = $10,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE uuid = $1
+      RETURNING ${COURSE_FEE_COLUMNS}
+      `,
+      [
+        uuid,
+        nextUniversityId,
+        nextCourseId,
+        nextSpecializationId,
+        nextStructureType,
+        nextTotalPeriods === '' || nextTotalPeriods == null ? null : Number(nextTotalPeriods),
+        nextPeriodNumber === '' || nextPeriodNumber == null ? null : Number(nextPeriodNumber),
+        nextPeriodLabel || null,
+        Number(nextAmount),
+        nextCurrency || 'INR',
+      ]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Course fee updated successfully',
+      data: result.rows[0],
+      fee: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Update Course Fee Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update course fee',
+      error: error.message,
+    });
+  }
+};
+
+const deleteCourseFee = async (req, res) => {
+  try {
+    const { uuid } = req.params;
+
+    const result = await pool.query(
+      `DELETE FROM course_fees WHERE uuid = $1 RETURNING uuid`,
+      [uuid]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course fee not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Course fee deleted successfully',
+      data: { uuid: result.rows[0].uuid },
+    });
+  } catch (error) {
+    console.error('Delete Course Fee Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete course fee',
+      error: error.message,
+    });
+  }
+};
+
+
+const getCourseFeesBySpecialization = async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100);
+    const offset = (page - 1) * limit;
+
+    const data = await pool.query(
+      `
+      SELECT
+          cf.id,
+          cf.uuid,
+          cf.fee_structure_type,
+          cf.total_periods,
+          cf.period_number,
+          cf.period_label,
+          cf.amount,
+          cf.currency,
+
+          u.id AS university_numeric_id,
+          u.uuid AS university_id,
+          u.name AS university_name,
+
+          c.uuid AS course_id,
+          c.name AS course_name,
+
+          s.uuid AS specialization_id,
+          s.name AS specialization_name
+
+      FROM course_fees cf
+
+      LEFT JOIN universities u
+          ON u.uuid = cf.university_id
+
+      LEFT JOIN courses c
+          ON c.uuid = cf.course_id
+
+      LEFT JOIN specializations s
+          ON s.uuid = cf.specialization_id
+
+      ORDER BY cf.id DESC
+
+      LIMIT $1
+      OFFSET $2;
+      `,
+      [limit, offset]
+    );
+
+    return res.json({
+      success: true,
+      page,
+      limit,
+      data: data.rows,
+      fees: data.rows,
+    });
+
+  } catch (error) {
+    console.error('Get Course Fees Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch course fees',
+      error: error.message,
+    });
+  }
+};
+
+
 module.exports = {
   createSpecialization,
   getSpecializations,
@@ -411,4 +856,8 @@ module.exports = {
   deleteSpecialization,
   getUniversitySpecializations,
   universitySpecilization,
+  createCourseFee,
+  updateCourseFee,
+  deleteCourseFee,
+  getCourseFeesBySpecialization,
 };

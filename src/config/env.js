@@ -18,9 +18,11 @@ const env = {
     name: process.env.COOKIE_NAME || 'access_token',
     maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000,
   },
+  // Browsers send Origin without a trailing slash, so normalise configured values
   corsOrigin: (process.env.CORS_ORIGIN || 'http://localhost:3000')
     .split(',')
-    .map((origin) => origin.trim()),
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
 };
 
 module.exports = env;

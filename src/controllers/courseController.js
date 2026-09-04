@@ -33,6 +33,7 @@ const createCourse = async (req, res) => {
       university_id,
       universityId,
       university_uuid,
+      universityUuid,
       name,
       degree,
       level,
@@ -59,8 +60,9 @@ const createCourse = async (req, res) => {
       });
     }
 
-    const uniRef = university_uuid || university_id || universityId;
+    const uniRef = universityUuid || university_uuid || universityId || university_id;
     let university = null;
+
     if (uniRef) {
       const uniResult = await pool.query(
         `SELECT id, uuid, name, short_name, code
@@ -72,9 +74,9 @@ const createCourse = async (req, res) => {
       );
       university = uniResult.rows[0] || null;
       if (!university) {
-        return res.status(404).json({
+        return res.status(400).json({
           success: false,
-          message: 'University not found',
+          message: 'Selected university was not found',
         });
       }
     }
@@ -125,19 +127,23 @@ const createCourse = async (req, res) => {
       );
     }
 
-    const course = mapCourse({
-      ...courseRow,
-      university_id: university?.id,
-      university_uuid: university?.uuid,
-      university_name: university?.name,
-      university_code: university?.code || university?.short_name,
-    });
-
     return res.status(201).json({
       success: true,
       message: 'Course created successfully',
-      data: course,
-      course,
+      data: mapCourse({
+        ...courseRow,
+        university_id: university?.id,
+        university_uuid: university?.uuid,
+        university_name: university?.name,
+        university_code: university?.code || university?.short_name,
+      }),
+      course: mapCourse({
+        ...courseRow,
+        university_id: university?.id,
+        university_uuid: university?.uuid,
+        university_name: university?.name,
+        university_code: university?.code || university?.short_name,
+      }),
     });
   } catch (error) {
     console.error('Create course error:', error);
@@ -439,55 +445,172 @@ const createCourseSpecializations = async (req, res) => {
     });
   }
 };
+
+
+
+const UNIVERSITY_LATERAL = `
+  LEFT JOIN LATERAL (
+    SELECT
+      uni.id AS university_id,
+      uni.uuid AS university_uuid,
+      uni.name AS university_name,
+      COALESCE(uni.code, uni.short_name) AS university_code
+    FROM university_courses uc
+    INNER JOIN universities uni
+      ON uni.uuid = uc.university_uuid
+     AND uni.is_deleted = false
+    WHERE uc.course_uuid = c.uuid
+    LIMIT 1
+  ) u ON true
+`;
+
+const SPECIALIZATIONS_LATERAL = `
+  LEFT JOIN LATERAL (
+    SELECT json_agg(
+      json_build_object(
+        'uuid', s.uuid,
+        'name', s.name,
+        'code', s.code,
+        'description', s.description,
+        'fees', COALESCE(fees.fees, '[]'::json)
+      ) ORDER BY s.name
+    ) AS specializations
+    FROM course_specializations cs
+    INNER JOIN specializations s
+      ON s.uuid = cs.specialization_uuid
+     AND s.is_deleted = false
+    LEFT JOIN LATERAL (
+      SELECT json_agg(
+        json_build_object(
+          'uuid', cf.uuid,
+          'feeStructureType', cf.fee_structure_type,
+          'totalPeriods', cf.total_periods,
+          'periodNumber', cf.period_number,
+          'periodLabel', cf.period_label,
+          'amount', cf.amount,
+          'currency', cf.currency
+        ) ORDER BY cf.period_number ASC, cf.id ASC
+      ) AS fees
+      FROM course_fees cf
+      WHERE cf.specialization_id = s.uuid
+    ) fees ON true
+    WHERE cs.course_uuid = c.uuid
+  ) specs ON true
+`;
+
 const getCourses = async (req, res) => {
   try {
-    const result = await pool.query(`
+    const {
+      search = '',
+      universityId,
+      university_id,
+      universityUuid,
+      university_uuid,
+      level,
+      status,
+      page = 1,
+      limit = 50,
+    } = req.query;
+
+    const uniRef = universityUuid || university_uuid || universityId || university_id;
+    const params = [];
+    const where = ['c.is_deleted = false'];
+
+    if (search) {
+      params.push(`%${search}%`);
+      where.push(`(
+        c.name ILIKE $${params.length}
+        OR COALESCE(c.code, '') ILIKE $${params.length}
+        OR COALESCE(c.degree, '') ILIKE $${params.length}
+      )`);
+    }
+
+    if (level) {
+      params.push(level);
+      where.push(`c.level = $${params.length}`);
+    }
+
+    if (status === 'ACTIVE') {
+      where.push('c.is_active = true');
+    } else if (status === 'INACTIVE') {
+      where.push('c.is_active = false');
+    }
+
+    if (uniRef) {
+      params.push(String(uniRef));
+      where.push(`EXISTS (
+        SELECT 1
+        FROM university_courses uc
+        INNER JOIN universities uni
+          ON uni.uuid = uc.university_uuid
+         AND uni.is_deleted = false
+        WHERE uc.course_uuid = c.uuid
+          AND (uni.id::text = $${params.length} OR uni.uuid::text = $${params.length})
+      )`);
+    }
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.min(500, Math.max(1, Number(limit) || 50));
+    const offset = (pageNum - 1) * limitNum;
+
+    const countResult = await pool.query(
+      `
+      SELECT COUNT(*)::int AS total
+      FROM courses c
+      WHERE ${where.join(' AND ')}
+      `,
+      params
+    );
+
+    const listParams = [...params, limitNum, offset];
+    const result = await pool.query(
+      `
       SELECT
         c.*,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'uuid', s.uuid,
-              'name', s.name,
-              'code', s.code,
-              'description', s.description
-            )
-            ORDER BY s.name
-          ) FILTER (WHERE s.uuid IS NOT NULL),
-          '[]'::json
-        ) AS specializations
-
+        u.university_id,
+        u.university_uuid,
+        u.university_name,
+        u.university_code,
+        COALESCE(specs.specializations, '[]'::json) AS specializations
       FROM courses c
+      ${UNIVERSITY_LATERAL}
+      ${SPECIALIZATIONS_LATERAL}
+      WHERE ${where.join(' AND ')}
+      ORDER BY c.name ASC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+      `,
+      listParams
+    );
 
-      LEFT JOIN course_specializations cs
-        ON cs.course_uuid = c.uuid
-
-      LEFT JOIN specializations s
-        ON s.uuid = cs.specialization_uuid
-        AND s.is_deleted = false
-
-      WHERE c.is_deleted = false
-
-      GROUP BY c.uuid
-
-      ORDER BY c.created_at DESC
-    `);
+    const total = countResult.rows[0]?.total || 0;
 
     return res.status(200).json({
       success: true,
-      count: result.rows.length,
+      message: 'Courses fetched successfully',
       data: result.rows,
+      courses: result.rows,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        pages: Math.max(1, Math.ceil(total / limitNum)),
+      },
     });
-
   } catch (error) {
     console.error('Get all courses error:', error);
 
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch courses',
+      error: error.message,
     });
   }
 };
+
+
+
+// Get All Course
 module.exports = {
   createCourse,
   getCourses,
@@ -495,5 +618,4 @@ module.exports = {
   updateCourse,
   deleteCourse,
   createCourseSpecializations,
-  
 };
