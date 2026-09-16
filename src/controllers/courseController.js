@@ -30,22 +30,12 @@ const mapCourse = (row) => ({
 const createCourse = async (req, res) => {
   try {
     const {
-      university_id,
-      universityId,
-      university_uuid,
-      universityUuid,
       name,
       degree,
       level,
       code,
-      description,
-      overview,
-      eligibility,
-      curriculum,
-      career_opportunities,
       currency,
       department,
-      faculty,
       study_mode,
       attendance_mode,
       language,
@@ -60,37 +50,17 @@ const createCourse = async (req, res) => {
       });
     }
 
-    const uniRef = universityUuid || university_uuid || universityId || university_id;
-    let university = null;
-
-    if (uniRef) {
-      const uniResult = await pool.query(
-        `SELECT id, uuid, name, short_name, code
-         FROM universities
-         WHERE is_deleted = false
-           AND (id::text = $1 OR uuid::text = $1)
-         LIMIT 1`,
-        [String(uniRef)]
-      );
-      university = uniResult.rows[0] || null;
-      if (!university) {
-        return res.status(400).json({
-          success: false,
-          message: 'Selected university was not found',
-        });
-      }
-    }
-
+    
     const result = await pool.query(
       `
       INSERT INTO courses (
         name, degree, level, code,
-        description, overview, eligibility, curriculum, career_opportunities,
-        currency, department, faculty, study_mode, attendance_mode, language, is_active
+      
+        currency, department, study_mode, attendance_mode, language, is_active
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16
+       
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
       )
       RETURNING *
       `,
@@ -99,14 +69,10 @@ const createCourse = async (req, res) => {
         degree || level || null,
         level || degree || null,
         code || null,
-        description || null,
-        overview || null,
-        eligibility || null,
-        curriculum || null,
-        career_opportunities || null,
+       
         currency || 'USD',
         department || null,
-        faculty || null,
+       
         study_mode || null,
         attendance_mode || null,
         language || null,
@@ -116,34 +82,13 @@ const createCourse = async (req, res) => {
 
     const courseRow = result.rows[0];
 
-    if (university?.uuid) {
-      await pool.query(
-        `
-        INSERT INTO university_courses (university_uuid, course_uuid)
-        VALUES ($1, $2)
-        ON CONFLICT DO NOTHING
-        `,
-        [university.uuid, courseRow.uuid]
-      );
-    }
+   
 
     return res.status(201).json({
       success: true,
       message: 'Course created successfully',
-      data: mapCourse({
-        ...courseRow,
-        university_id: university?.id,
-        university_uuid: university?.uuid,
-        university_name: university?.name,
-        university_code: university?.code || university?.short_name,
-      }),
-      course: mapCourse({
-        ...courseRow,
-        university_id: university?.id,
-        university_uuid: university?.uuid,
-        university_name: university?.name,
-        university_code: university?.code || university?.short_name,
-      }),
+      data:courseRow,
+     
     });
   } catch (error) {
     console.error('Create course error:', error);
@@ -510,6 +455,7 @@ const getCourses = async (req, res) => {
       status,
       page = 1,
       limit = 50,
+      
     } = req.query;
 
     const uniRef = universityUuid || university_uuid || universityId || university_id;
@@ -609,6 +555,193 @@ const getCourses = async (req, res) => {
 };
 
 
+const createContentParagraph = async (req, res) => {
+  try {
+      const {
+          course_id,
+          title,
+          content,
+          sort_order = 0
+      } = req.body;
+
+      if (!course_id) {
+          return res.status(400).json({
+              success: false,
+              message: "course_id is required"
+          });
+      }
+
+      if (!content) {
+          return res.status(400).json({
+              success: false,
+              message: "content is required"
+          });
+      }
+
+      const result = await pool.query(
+          `
+          INSERT INTO course_content_paragraphs
+              (course_id, title, content, sort_order)
+          VALUES
+              ($1, $2, $3, $4)
+          RETURNING *
+          `,
+          [
+              course_id,
+              title || null,
+              content,
+              Number(sort_order) || 0
+          ]
+      );
+
+      res.status(201).json({
+          success: true,
+          message: "Content paragraph created successfully",
+          data: result.rows[0]
+      });
+
+  } catch (error) {
+      console.error("Create content paragraph error:", error);
+
+      res.status(500).json({
+          success: false,
+          message: "Failed to create content paragraph",
+          error: error.message
+      });
+  }
+};
+
+const getContentParagraphsByCourse = async (req, res) => {
+  try {
+    const courseId = req.params.courseId || req.query.course_id;
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM course_content_paragraphs
+      WHERE course_id = $1
+      ORDER BY sort_order ASC, created_at ASC
+      `,
+      [courseId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get content paragraphs error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch content paragraphs',
+      error: error.message,
+    });
+  }
+};
+
+const createFaq = async (req, res) => {
+  try {
+    const {
+      course_uuid,
+      question,
+      answer,
+      display = 0,
+      is_active = true,
+    } = req.body;
+
+    if (!course_uuid || !question || !answer) {
+      return res.status(400).json({
+        success: false,
+        message: 'course_uuid, question and answer are required',
+      });
+    }
+
+   
+
+    const result = await pool.query(
+      `
+      INSERT INTO universities_faqs (
+        
+        course_uuid,
+        question,
+        answer,
+        display,
+        is_active
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [
+        
+        course_uuid,
+        question,
+        answer,
+        String(Number(display) || 0),
+        is_active === true || is_active === 'true' || is_active === '1',
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'FAQ created successfully',
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Create FAQ Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create FAQ',
+      error: error.message,
+    });
+  }
+};
+
+const getFaqsByCourse = async (req, res) => {
+  try {
+    const courseId = req.params.courseId || req.query.course_uuid;
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM universities_faqs
+      WHERE course_uuid = $1
+      ORDER BY display ASC, created_at ASC
+      `,
+      [courseId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get course FAQs Error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch course FAQs',
+      error: error.message,
+    });
+  }
+};
 
 // Get All Course
 module.exports = {
@@ -616,6 +749,10 @@ module.exports = {
   getCourses,
   getCourseById,
   updateCourse,
+  createFaq,
+  getFaqsByCourse,
+  createContentParagraph,
+  getContentParagraphsByCourse,
   deleteCourse,
   createCourseSpecializations,
 };
