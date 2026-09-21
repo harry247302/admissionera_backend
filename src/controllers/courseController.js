@@ -108,51 +108,176 @@ const createCourse = async (req, res) => {
   }
 };
 
-
 const getCourseById = async (req, res) => {
   try {
     const { uuid } = req.params;
+
+    if (!uuid) {
+      return res.status(400).json({
+        success: false,
+        message: "Course UUID is required",
+      });
+    }
 
     const result = await pool.query(
       `
       SELECT
         c.*,
-        u.id AS university_id,
-        u.uuid AS university_uuid,
-        u.name AS university_name,
-        COALESCE(u.code, u.short_name) AS university_code
+
+        /* =========================
+           FAQs
+           ========================= */
+        COALESCE(
+          (
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'id', faq.id,
+                'question', faq.question,
+                'answer', faq.answer,
+                'display', faq.display,
+                'is_active', faq.is_active,
+                'created_at', faq.created_at,
+                'updated_at', faq.updated_at
+              )
+              ORDER BY faq.created_at
+            )
+            FROM universities_faqs faq
+            WHERE faq.course_uuid = c.uuid
+          ),
+          '[]'::jsonb
+        ) AS faqs,
+
+
+        /* =========================
+           COURSE CONTENT PARAGRAPHS
+           ========================= */
+        COALESCE(
+          (
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'id', scp.id,
+                'title', scp.title,
+                'content', scp.content,
+                'sort_order', scp.sort_order,
+                'created_at', scp.created_at,
+                'updated_at', scp.updated_at
+              )
+              ORDER BY scp.sort_order
+            )
+            FROM course_content_paragraphs scp
+            WHERE scp.course_id = c.uuid
+          ),
+          '[]'::jsonb
+        ) AS course_content_paragraphs,
+
+
+        /* =========================
+           SPECIALIZATION CONTENT TABLES
+           ========================= */
+        COALESCE(
+          sct_data.specialization_content_tables,
+          '[]'::jsonb
+        ) AS specialization_content_tables
+
+
       FROM courses c
-      LEFT JOIN university_courses uc ON uc.course_uuid = c.uuid
-      LEFT JOIN universities u ON u.uuid = uc.university_uuid AND u.is_deleted = false
+
+
+      /* =========================
+         TABLES
+         
+         specialization_content_tables.course_id
+                        ↓
+                   courses.uuid
+         ========================= */
+      LEFT JOIN LATERAL (
+        SELECT
+          jsonb_agg(
+            jsonb_build_object(
+              'id', sct.id,
+              'title', sct.title,
+              'sort_order', sct.sort_order,
+              'specialization_uuid', sct.specialization_uuid,
+              'course_id', sct.course_id,
+              'created_at', sct.created_at,
+              'updated_at', sct.updated_at,
+
+              /* =========================
+                 TABLE ROWS
+
+                 specialization_content_rows.table_id
+                            ↓
+                 specialization_content_tables.id
+                 ========================= */
+              'rows',
+              COALESCE(
+                (
+                  SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'id', scr.id,
+                      'label', scr.label,
+                      'content', scr.content,
+                      'sort_order', scr.sort_order
+                    )
+                    ORDER BY scr.sort_order
+                  )
+                  FROM specialization_content_rows scr
+                  WHERE scr.table_id = sct.id
+                ),
+                '[]'::jsonb
+              )
+            )
+            ORDER BY sct.sort_order
+          ) AS specialization_content_tables
+
+        FROM specialization_content_tables sct
+
+        WHERE sct.course_id = c.uuid
+
+      ) sct_data ON true
+
+
+      /* =========================
+         FETCH ONLY ONE COURSE
+         ========================= */
       WHERE c.uuid = $1
         AND c.is_deleted = false
+
       LIMIT 1
       `,
       [uuid]
     );
 
+
+    /* =========================
+       COURSE NOT FOUND
+       ========================= */
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Course not found',
+        message: "Course not found",
       });
     }
 
+
+    /* =========================
+       SUCCESS
+       ========================= */
     return res.status(200).json({
       success: true,
-      data: mapCourse(result.rows[0]),
+      data: result.rows[0],
     });
+
   } catch (error) {
-    console.error('Get course error:', error);
+    console.error("Get course by UUID error:", error);
 
     return res.status(500).json({
       success: false,
-      message: 'Failed to fetch course',
+      message: "Internal server error",
       error: error.message,
     });
   }
 };
-
 const updateCourse = async (req, res) => {
   try {
     const { uuid } = req.params;
@@ -446,7 +571,6 @@ const SPECIALIZATIONS_LATERAL = `
 const getCourses = async (req, res) => {
   try {
     const {
-      search = '',
       universityId,
       university_id,
       universityUuid,
@@ -455,35 +579,34 @@ const getCourses = async (req, res) => {
       status,
       page = 1,
       limit = 50,
-      
     } = req.query;
 
-    const uniRef = universityUuid || university_uuid || universityId || university_id;
+    const uniRef =
+      universityUuid ||
+      university_uuid ||
+      universityId ||
+      university_id;
+
     const params = [];
     const where = ['c.is_deleted = false'];
 
-    if (search) {
-      params.push(`%${search}%`);
-      where.push(`(
-        c.name ILIKE $${params.length}
-        OR COALESCE(c.code, '') ILIKE $${params.length}
-        OR COALESCE(c.degree, '') ILIKE $${params.length}
-      )`);
-    }
-
+    // Level filter
     if (level) {
       params.push(level);
       where.push(`c.level = $${params.length}`);
     }
 
+    // Status filter
     if (status === 'ACTIVE') {
       where.push('c.is_active = true');
     } else if (status === 'INACTIVE') {
       where.push('c.is_active = false');
     }
 
+    // University filter
     if (uniRef) {
       params.push(String(uniRef));
+
       where.push(`EXISTS (
         SELECT 1
         FROM university_courses uc
@@ -491,7 +614,10 @@ const getCourses = async (req, res) => {
           ON uni.uuid = uc.university_uuid
          AND uni.is_deleted = false
         WHERE uc.course_uuid = c.uuid
-          AND (uni.id::text = $${params.length} OR uni.uuid::text = $${params.length})
+          AND (
+            uni.id::text = $${params.length}
+            OR uni.uuid::text = $${params.length}
+          )
       )`);
     }
 
@@ -499,6 +625,7 @@ const getCourses = async (req, res) => {
     const limitNum = Math.min(500, Math.max(1, Number(limit) || 50));
     const offset = (pageNum - 1) * limitNum;
 
+    // Count
     const countResult = await pool.query(
       `
       SELECT COUNT(*)::int AS total
@@ -508,34 +635,148 @@ const getCourses = async (req, res) => {
       params
     );
 
-    const listParams = [...params, limitNum, offset];
+    const total = countResult.rows[0]?.total || 0;
+
+    // Pagination parameters
+    const limitParam = params.length + 1;
+    const offsetParam = params.length + 2;
+
+    const listParams = [
+      ...params,
+      limitNum,
+      offset,
+    ];
+
+    // Get courses + all content
     const result = await pool.query(
       `
       SELECT
         c.*,
-        u.university_id,
-        u.university_uuid,
-        u.university_name,
-        u.university_code,
-        COALESCE(specs.specializations, '[]'::json) AS specializations
+    
+        /* =========================
+           FAQs
+           ========================= */
+        COALESCE(
+          (
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'id', faq.id,
+                'question', faq.question,
+                'answer', faq.answer,
+                'display', faq.display,
+                'is_active', faq.is_active,
+                'created_at', faq.created_at,
+                'updated_at', faq.updated_at
+              )
+              ORDER BY faq.created_at
+            )
+            FROM universities_faqs faq
+            WHERE faq.course_uuid = c.uuid
+          ),
+          '[]'::jsonb
+        ) AS faqs,
+    
+    
+        /* =========================
+           SPECIALIZATION PARAGRAPHS
+           DO NOT CHANGE THIS
+           ========================= */
+        COALESCE(
+          (
+            SELECT jsonb_agg(
+              jsonb_build_object(
+                'id', scp.id,
+             
+                'title', scp.title,
+                'content', scp.content,
+                'sort_order', scp.sort_order,
+                'created_at', scp.created_at,
+                'updated_at', scp.updated_at
+              )
+              ORDER BY scp.sort_order
+            )
+            FROM course_content_paragraphs scp
+            WHERE scp.course_id = c.uuid
+          ),
+          '[]'::jsonb
+        ) AS course_content_paragraphs,
+    
+    
+        /* =========================
+           SPECIALIZATION CONTENT TABLES
+           ========================= */
+        COALESCE(
+          sct_data.specialization_content_tables,
+          '[]'::jsonb
+        ) AS specialization_content_tables
+    
+    
       FROM courses c
-      ${UNIVERSITY_LATERAL}
-      ${SPECIALIZATIONS_LATERAL}
+    
+    
+      /* =========================
+         JOIN TABLES USING COURSE UUID
+         specialization_content_tables.course_id
+         -> courses.uuid
+         ========================= */
+      LEFT JOIN LATERAL (
+        SELECT
+          jsonb_agg(
+            jsonb_build_object(
+              'id', sct.id,
+              'title', sct.title,
+              'sort_order', sct.sort_order,
+              'specialization_uuid', sct.specialization_uuid,
+              'course_id', sct.course_id,
+              'created_at', sct.created_at,
+              'updated_at', sct.updated_at,
+    
+              /* =========================
+                 JOIN TABLE ROWS
+                 specialization_content_rows.table_id
+                 -> specialization_content_tables.id
+                 ========================= */
+              'rows',
+              COALESCE(
+                (
+                  SELECT jsonb_agg(
+                    jsonb_build_object(
+                      'id', scr.id,
+                      'label', scr.label,
+                      'content', scr.content,
+                      'sort_order', scr.sort_order
+                    )
+                    ORDER BY scr.sort_order
+                  )
+                  FROM specialization_content_rows scr
+                  WHERE scr.table_id = sct.id
+                ),
+                '[]'::jsonb
+              )
+            )
+            ORDER BY sct.sort_order
+          ) AS specialization_content_tables
+    
+        FROM specialization_content_tables sct
+    
+        WHERE sct.course_id = c.uuid
+    
+      ) sct_data ON true
+    
+    
       WHERE ${where.join(' AND ')}
-      ORDER BY c.name ASC
-      LIMIT $${params.length + 1}
-      OFFSET $${params.length + 2}
+    
+      ORDER BY c.created_at DESC
+    
+      LIMIT $${limitParam}
+      OFFSET $${offsetParam}
       `,
       listParams
     );
-
-    const total = countResult.rows[0]?.total || 0;
-
     return res.status(200).json({
       success: true,
       message: 'Courses fetched successfully',
       data: result.rows,
-      courses: result.rows,
       pagination: {
         total,
         page: pageNum,
@@ -543,6 +784,7 @@ const getCourses = async (req, res) => {
         pages: Math.max(1, Math.ceil(total / limitNum)),
       },
     });
+
   } catch (error) {
     console.error('Get all courses error:', error);
 
@@ -553,7 +795,6 @@ const getCourses = async (req, res) => {
     });
   }
 };
-
 
 const createContentParagraph = async (req, res) => {
   try {

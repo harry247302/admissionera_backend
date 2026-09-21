@@ -38,6 +38,8 @@ academicRouter.put(
   handleUniversityMediaUpload,
   universityController.updateUniversity
 );
+
+academicRouter.get('/universities/:uuid', universityController.getUniversityById);
 academicRouter.delete('/universities/:uuid', universityController.deleteUniversity);
 academicRouter.post('/courses-fees', specializationController.createCourseFee);
 academicRouter.get('/course-fees', specializationController.getCourseFeesBySpecialization);

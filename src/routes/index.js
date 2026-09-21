@@ -13,5 +13,6 @@ router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/crm', require('./crmRoutes'));
 router.use('/academic', academicRouter);
+router.use('/session', require('./sessionRoutes'));
 
 module.exports = router;

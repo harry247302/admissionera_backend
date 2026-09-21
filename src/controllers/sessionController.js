@@ -1,0 +1,61 @@
+const { pool } = require("../config/db")
+
+const createSession = async (req,res)=>{
+    try {
+        const {name,start_date,expiry_date} = req.body
+        if(!name || !start_date || !expiry_date){
+            return res.status(400).json({
+                success: false,
+                message: 'All fields are required'
+            })
+        }
+        const session = await pool.query(
+            'INSERT INTO session (name,start_date,expiry_date) VALUES ($1,$2,$3) RETURNING *',
+            [name,start_date,expiry_date]
+        )
+        if(session.rowCount === 0){
+            return res.status(400).json({
+                success: false,
+                message: 'Failed to create session'
+            })
+        }
+        return res.status(201).json({
+            success: true,
+            message: 'Session created successfully',
+            data: session.rows[0],
+        })
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        })
+    }
+}
+
+const sessionStatus = async (req,res)=>{
+    try {
+        const {id} = req.params;
+        if(!id){
+            res.status(400).json({
+                success: false,
+                message: 'Session ID is required'
+            })
+        }
+        const sessionDeactivate =  await pool.query(
+            'UPDATE session SET status = $1 WHERE id = $2',
+            [status,id]
+        )   
+        
+        return res.status(200).json({
+            success: true,
+            message: 'Status updated successfully'
+        })
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        })   }
+}
+module.exports = {
+    createSession
+}
