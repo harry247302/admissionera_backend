@@ -407,10 +407,29 @@ const universitySpecilization = async (req, res) => {
 const FEE_STRUCTURE_TYPES = new Set(['yearly', 'semester', 'one_time']);
 
 const COURSE_FEE_COLUMNS = `
-  uuid, university_id, course_id, specialization_id,
+  uuid, university_id, course_id, specialization_id, session_id,
   fee_structure_type, total_periods, period_number, period_label,
-  amount, currency, created_at, updated_at
+  amount, currency,
+  per_seme_fees, per_year_fees, total_sem, total_years,
+  created_at, updated_at
 `;
+
+const toNullableNumber = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  return Number.isNaN(num) ? null : num;
+};
+
+const pickFeeSummaryFields = (body = {}) => ({
+  perSemesterFee: toNullableNumber(
+    body.per_semester_fee ?? body.perSemesterFee ?? body.per_seme_fees ?? body.perSemeFees
+  ),
+  perYearFee: toNullableNumber(
+    body.per_year_fee ?? body.perYearFee ?? body.per_year_fees ?? body.perYearFees
+  ),
+  totalSem: toNullableNumber(body.total_sem ?? body.totalSem),
+  totalYears: toNullableNumber(body.total_years ?? body.totalYears),
+});
 
 const normalizeFeeStructureType = (value) => {
   if (!value) return null;
@@ -445,6 +464,15 @@ const resolveCourseUuid = async (ref) => {
   return result.rows[0]?.uuid || null;
 };
 
+const resolveSessionUuid = async (ref) => {
+  if (!ref) return null;
+  const result = await pool.query(
+    `SELECT id FROM session WHERE id::text = $1 LIMIT 1`,
+    [String(ref)]
+  );
+  return result.rows[0]?.id || null;
+};
+
 const resolveSpecializationUuid = async (ref) => {
   if (!ref) return null;
   const result = await pool.query(
@@ -466,6 +494,8 @@ const createCourseFee = async (req, res) => {
       courseId,
       specialization_id,
       specializationId,
+      session_id,
+      sessionId,
       fee_structure_type,
       feeStructureType,
       total_periods,
@@ -475,16 +505,22 @@ const createCourseFee = async (req, res) => {
       period_label,
       periodLabel,
       amount,
+      per_semester_fee,
+      per_year_fee,
+      total_sem,
+      total_years,
       currency = 'INR',
     } = req.body;
 
     const universityRef = university_id || universityId;
     const courseRef = course_id || courseId;
     const specializationRef = specialization_id || specializationId;
+    const sessionRef = session_id || sessionId;
     const structureType = normalizeFeeStructureType(fee_structure_type || feeStructureType);
     const periods = total_periods ?? totalPeriods ?? null;
     const periodNo = period_number ?? periodNumber ?? null;
     const label = period_label ?? periodLabel ?? null;
+    const summary = pickFeeSummaryFields(req.body);
 
     if (!universityRef) {
       return res.status(400).json({
@@ -504,6 +540,13 @@ const createCourseFee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'specialization_id is required',
+      });
+    }
+
+    if (!sessionRef) {
+      return res.status(400).json({
+        success: false,
+        message: 'session_id is required',
       });
     }
 
@@ -545,32 +588,50 @@ const createCourseFee = async (req, res) => {
       });
     }
 
+    const sessionUuid = await resolveSessionUuid(sessionRef);
+    if (!sessionUuid) {
+      return res.status(404).json({
+        success: false,
+        message: 'Session not found',
+      });
+    }
+
     const result = await pool.query(
       `
       INSERT INTO course_fees (
         university_id,
         course_id,
         specialization_id,
+        session_id,
         fee_structure_type,
         total_periods,
         period_number,
         period_label,
         amount,
-        currency
+        currency,
+        per_seme_fees,
+        per_year_fees,
+        total_sem,
+        total_years
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       RETURNING ${COURSE_FEE_COLUMNS}
       `,
       [
         universityUuid,
         courseUuid,
         specializationUuid,
+        sessionUuid,
         structureType,
         periods === '' || periods == null ? null : Number(periods),
         periodNo === '' || periodNo == null ? null : Number(periodNo),
         label || null,
         Number(amount),
         currency || 'INR',
+        summary.perSemesterFee,
+        summary.perYearFee,
+        summary.totalSem,
+        summary.totalYears,
       ]
     );
 
@@ -601,6 +662,8 @@ const updateCourseFee = async (req, res) => {
       courseId,
       specialization_id,
       specializationId,
+      session_id,
+      sessionId,
       fee_structure_type,
       feeStructureType,
       total_periods,
@@ -610,6 +673,10 @@ const updateCourseFee = async (req, res) => {
       period_label,
       periodLabel,
       amount,
+      per_semester_fee,
+      per_year_fee,
+      total_sem,
+      total_years,
       currency,
     } = req.body;
 
@@ -666,6 +733,23 @@ const updateCourseFee = async (req, res) => {
       nextSpecializationId = resolved;
     }
 
+    let nextSessionId = current.session_id;
+    if (session_id !== undefined || sessionId !== undefined) {
+      const sessionRef = session_id ?? sessionId;
+      if (sessionRef === null || sessionRef === '') {
+        nextSessionId = null;
+      } else {
+        const resolved = await resolveSessionUuid(sessionRef);
+        if (!resolved) {
+          return res.status(404).json({
+            success: false,
+            message: 'Session not found',
+          });
+        }
+        nextSessionId = resolved;
+      }
+    }
+
     let nextStructureType = current.fee_structure_type;
     const rawStructureType = fee_structure_type ?? feeStructureType;
     if (rawStructureType !== undefined) {
@@ -693,6 +777,23 @@ const updateCourseFee = async (req, res) => {
         : current.period_label;
     const nextAmount = amount !== undefined ? amount : current.amount;
     const nextCurrency = currency !== undefined ? currency : current.currency;
+    const summary = pickFeeSummaryFields(req.body);
+    const nextPerSemesterFee =
+      per_semester_fee !== undefined || req.body.perSemesterFee !== undefined || req.body.per_seme_fees !== undefined
+        ? summary.perSemesterFee
+        : current.per_seme_fees;
+    const nextPerYearFee =
+      per_year_fee !== undefined || req.body.perYearFee !== undefined || req.body.per_year_fees !== undefined
+        ? summary.perYearFee
+        : current.per_year_fees;
+    const nextTotalSem =
+      total_sem !== undefined || req.body.totalSem !== undefined
+        ? summary.totalSem
+        : current.total_sem;
+    const nextTotalYears =
+      total_years !== undefined || req.body.totalYears !== undefined
+        ? summary.totalYears
+        : current.total_years;
 
     if (nextAmount === null || nextAmount === '' || Number.isNaN(Number(nextAmount))) {
       return res.status(400).json({
@@ -708,12 +809,17 @@ const updateCourseFee = async (req, res) => {
         university_id = $2,
         course_id = $3,
         specialization_id = $4,
-        fee_structure_type = $5,
-        total_periods = $6,
-        period_number = $7,
-        period_label = $8,
-        amount = $9,
-        currency = $10,
+        session_id = $5,
+        fee_structure_type = $6,
+        total_periods = $7,
+        period_number = $8,
+        period_label = $9,
+        amount = $10,
+        currency = $11,
+        per_seme_fees = $12,
+        per_year_fees = $13,
+        total_sem = $14,
+        total_years = $15,
         updated_at = CURRENT_TIMESTAMP
       WHERE uuid = $1
       RETURNING ${COURSE_FEE_COLUMNS}
@@ -723,12 +829,17 @@ const updateCourseFee = async (req, res) => {
         nextUniversityId,
         nextCourseId,
         nextSpecializationId,
+        nextSessionId,
         nextStructureType,
         nextTotalPeriods === '' || nextTotalPeriods == null ? null : Number(nextTotalPeriods),
         nextPeriodNumber === '' || nextPeriodNumber == null ? null : Number(nextPeriodNumber),
         nextPeriodLabel || null,
         Number(nextAmount),
         nextCurrency || 'INR',
+        nextPerSemesterFee,
+        nextPerYearFee,
+        nextTotalSem,
+        nextTotalYears,
       ]
     );
 
@@ -799,6 +910,11 @@ const getCourseFeesBySpecialization = async (req, res) => {
           cf.period_label,
           cf.amount,
           cf.currency,
+          cf.session_id,
+          cf.per_seme_fees,
+          cf.per_year_fees,
+          cf.total_sem,
+          cf.total_years,
 
           u.id AS university_numeric_id,
           u.uuid AS university_id,
@@ -808,7 +924,11 @@ const getCourseFeesBySpecialization = async (req, res) => {
           c.name AS course_name,
 
           s.uuid AS specialization_id,
-          s.name AS specialization_name
+          s.name AS specialization_name,
+
+          sess.name AS session_name,
+          sess.start_date AS session_start_date,
+          sess.expiry_date AS session_expiry_date
 
       FROM course_fees cf
 
@@ -820,6 +940,9 @@ const getCourseFeesBySpecialization = async (req, res) => {
 
       LEFT JOIN specializations s
           ON s.uuid = cf.specialization_id
+
+      LEFT JOIN session sess
+          ON sess.id = cf.session_id
 
       ORDER BY cf.id DESC
 

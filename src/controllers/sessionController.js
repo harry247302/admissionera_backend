@@ -32,6 +32,27 @@ const createSession = async (req,res)=>{
     }
 }
 
+const getSessions = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, start_date, expiry_date, created_at, status
+       FROM session
+       ORDER BY start_date DESC NULLS LAST, created_at DESC NULLS LAST`
+    );
+
+    return res.status(200).json({
+      success: true,
+      sessions: result.rows,
+      data: result.rows,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch sessions',
+    });
+  }
+};
+
 const sessionStatus = async (req,res)=>{
     try {
         const {id} = req.params;
@@ -57,5 +78,6 @@ const sessionStatus = async (req,res)=>{
         })   }
 }
 module.exports = {
-    createSession
+    createSession,
+    getSessions,
 }
