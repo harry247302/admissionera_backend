@@ -122,128 +122,163 @@ const getCourseById = async (req, res) => {
     const result = await pool.query(
       `
       SELECT
-        c.*,
+    c.*,
 
-        /* =========================
-           FAQs
-           ========================= */
-        COALESCE(
-          (
+    /* =========================
+       FAQs
+       ========================= */
+    COALESCE(
+        (
             SELECT jsonb_agg(
-              jsonb_build_object(
-                'id', faq.id,
-                'question', faq.question,
-                'answer', faq.answer,
-                'display', faq.display,
-                'is_active', faq.is_active,
-                'created_at', faq.created_at,
-                'updated_at', faq.updated_at
-              )
-              ORDER BY faq.created_at
+                jsonb_build_object(
+                    'id', faq.id,
+                    'question', faq.question,
+                    'answer', faq.answer,
+                    'display', faq.display,
+                    'is_active', faq.is_active,
+                    'created_at', faq.created_at,
+                    'updated_at', faq.updated_at
+                )
+                ORDER BY faq.created_at
             )
             FROM universities_faqs faq
             WHERE faq.course_uuid = c.uuid
-          ),
-          '[]'::jsonb
-        ) AS faqs,
+        ),
+        '[]'::jsonb
+    ) AS faqs,
 
 
-        /* =========================
-           COURSE CONTENT PARAGRAPHS
-           ========================= */
-        COALESCE(
-          (
+    /* =========================
+       COURSE CONTENT PARAGRAPHS
+       ========================= */
+    COALESCE(
+        (
             SELECT jsonb_agg(
-              jsonb_build_object(
-                'id', scp.id,
-                'title', scp.title,
-                'content', scp.content,
-                'sort_order', scp.sort_order,
-                'created_at', scp.created_at,
-                'updated_at', scp.updated_at
-              )
-              ORDER BY scp.sort_order
+                jsonb_build_object(
+                    'id', scp.id,
+                    'title', scp.title,
+                    'content', scp.content,
+                    'sort_order', scp.sort_order,
+                    'created_at', scp.created_at,
+                    'updated_at', scp.updated_at
+                )
+                ORDER BY scp.sort_order
             )
             FROM course_content_paragraphs scp
             WHERE scp.course_id = c.uuid
-          ),
-          '[]'::jsonb
-        ) AS course_content_paragraphs,
+        ),
+        '[]'::jsonb
+    ) AS course_content_paragraphs,
 
 
-        /* =========================
-           SPECIALIZATION CONTENT TABLES
-           ========================= */
-        COALESCE(
-          sct_data.specialization_content_tables,
-          '[]'::jsonb
-        ) AS specialization_content_tables
+    /* =========================
+       SPECIALIZATIONS
+       ========================= */
+    COALESCE(
+        (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+
+                    'id', s.id,
+                    'uuid', s.uuid,
+                    'name', s.name,
+                    'slug', s.slug,
+                    'code', s.code,
+                    'short_name', s.short_name,
+                    'description', s.description
+                )
+                ORDER BY s.name
+            )
+
+            FROM specializations s
+
+            WHERE s.uuid IN (
+                SELECT cs.specialization_uuid
+                FROM course_specializations cs
+                WHERE cs.course_uuid = c.uuid
+                UNION
+                SELECT cf.specialization_id
+                FROM course_fees cf
+                WHERE cf.course_id = c.uuid
+                UNION
+                SELECT p.specialization_uuid
+                FROM specialization_content_paragraphs p
+                WHERE p.course_id = c.uuid
+                UNION
+                SELECT t.specialization_uuid
+                FROM specialization_content_tables t
+                WHERE t.course_id = c.uuid
+                  AND t.specialization_uuid IS NOT NULL
+            )
+              AND s.is_deleted = false
+              AND s.is_active = true
+        ),
+        '[]'::jsonb
+    ) AS specializations,
 
 
-      FROM courses c
+    /* =========================
+       COURSE SPECIALIZATION TABLES
+       ========================= */
+    COALESCE(
+        sct_data.specialization_content_tables,
+        '[]'::jsonb
+    ) AS specialization_content_tables
 
 
-      /* =========================
-         TABLES
-         
-         specialization_content_tables.course_id
-                        ↓
-                   courses.uuid
-         ========================= */
-      LEFT JOIN LATERAL (
-        SELECT
-          jsonb_agg(
+FROM courses c
+
+
+/* =========================
+   COURSE LEVEL TABLES
+   ========================= */
+LEFT JOIN LATERAL (
+    SELECT
+        jsonb_agg(
             jsonb_build_object(
-              'id', sct.id,
-              'title', sct.title,
-              'sort_order', sct.sort_order,
-              'specialization_uuid', sct.specialization_uuid,
-              'course_id', sct.course_id,
-              'created_at', sct.created_at,
-              'updated_at', sct.updated_at,
+                'id', sct.id,
+                'title', sct.title,
+                'sort_order', sct.sort_order,
+                'specialization_uuid', sct.specialization_uuid,
+                'course_id', sct.course_id,
+                'created_at', sct.created_at,
+                'updated_at', sct.updated_at,
 
-              /* =========================
-                 TABLE ROWS
-
-                 specialization_content_rows.table_id
-                            ↓
-                 specialization_content_tables.id
-                 ========================= */
-              'rows',
-              COALESCE(
-                (
-                  SELECT jsonb_agg(
-                    jsonb_build_object(
-                      'id', scr.id,
-                      'label', scr.label,
-                      'content', scr.content,
-                      'sort_order', scr.sort_order
-                    )
-                    ORDER BY scr.sort_order
-                  )
-                  FROM specialization_content_rows scr
-                  WHERE scr.table_id = sct.id
-                ),
-                '[]'::jsonb
-              )
+                'rows',
+                COALESCE(
+                    (
+                        SELECT jsonb_agg(
+                            jsonb_build_object(
+                                'id', scr.id,
+                                'label', scr.label,
+                                'content', scr.content,
+                                'sort_order', scr.sort_order
+                            )
+                            ORDER BY scr.sort_order
+                        )
+                        FROM specialization_content_rows scr
+                        WHERE scr.table_id = sct.id
+                    ),
+                    '[]'::jsonb
+                )
             )
             ORDER BY sct.sort_order
-          ) AS specialization_content_tables
+        ) AS specialization_content_tables
 
-        FROM specialization_content_tables sct
+    FROM specialization_content_tables sct
 
-        WHERE sct.course_id = c.uuid
+    WHERE sct.course_id = c.uuid
 
-      ) sct_data ON true
+) sct_data ON true
 
 
-      /* =========================
-         FETCH ONLY ONE COURSE
-         ========================= */
-      WHERE c.uuid = $1
-        AND c.is_deleted = false
+/* =========================
+   FETCH ONLY ONE COURSE
+   ========================= */
+WHERE c.uuid = $1
+  AND c.is_deleted = false
 
-      LIMIT 1
+LIMIT 1;
       `,
       [uuid]
     );
@@ -545,10 +580,7 @@ const SPECIALIZATIONS_LATERAL = `
         'fees', COALESCE(fees.fees, '[]'::json)
       ) ORDER BY s.name
     ) AS specializations
-    FROM course_specializations cs
-    INNER JOIN specializations s
-      ON s.uuid = cs.specialization_uuid
-     AND s.is_deleted = false
+    FROM specializations s
     LEFT JOIN LATERAL (
       SELECT json_agg(
         json_build_object(
@@ -563,8 +595,18 @@ const SPECIALIZATIONS_LATERAL = `
       ) AS fees
       FROM course_fees cf
       WHERE cf.specialization_id = s.uuid
+        AND cf.course_id = c.uuid
     ) fees ON true
-    WHERE cs.course_uuid = c.uuid
+    WHERE s.is_deleted = false
+      AND s.uuid IN (
+        SELECT cs.specialization_uuid
+        FROM course_specializations cs
+        WHERE cs.course_uuid = c.uuid
+        UNION
+        SELECT cf2.specialization_id
+        FROM course_fees cf2
+        WHERE cf2.course_id = c.uuid
+      )
   ) specs ON true
 `;
 

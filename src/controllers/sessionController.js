@@ -2,16 +2,17 @@ const { pool } = require("../config/db")
 
 const createSession = async (req,res)=>{
     try {
-        const {name,start_date,expiry_date} = req.body
-        if(!name || !start_date || !expiry_date){
+        const { name, status } = req.body
+        if(!name){
             return res.status(400).json({
                 success: false,
-                message: 'All fields are required'
+                message: 'Session name is required'
             })
         }
+        const isActive = status !== false && status !== 'false' && status !== 'INACTIVE' && status !== 'inactive'
         const session = await pool.query(
-            'INSERT INTO session (name,start_date,expiry_date) VALUES ($1,$2,$3) RETURNING *',
-            [name,start_date,expiry_date]
+            'INSERT INTO session (name, status) VALUES ($1, $2) RETURNING *',
+            [name, isActive]
         )
         if(session.rowCount === 0){
             return res.status(400).json({
