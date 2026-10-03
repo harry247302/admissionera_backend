@@ -63,6 +63,7 @@ academicRouter.get('/specialization-table-paragraphs/:specializationId', special
 academicRouter.delete('/specialization-table-paragraphs/by-specialization/:specializationId', specializationController.deleteContentParagraphsByParent);
 academicRouter.post('/courses', courseController.createCourse);
 academicRouter.get('/courses', courseController.getCourses);
+academicRouter.get('/courses-with-all-content', courseController.getCoursesWithAllContents);
 academicRouter.get('/courses/:uuid', courseController.getCourseById);
 academicRouter.put('/courses/:uuid', courseController.updateCourse);
 academicRouter.delete('/courses/:uuid', courseController.deleteCourse);
@@ -75,6 +76,7 @@ academicRouter.get('/courses-faqs/:courseId', courseController.getFaqsByCourse);
 academicRouter.get('/specializations', specializationController.getSpecializations);
 academicRouter.post('/specializations', specializationController.createSpecialization);
 academicRouter.put('/specializations/:uuid', specializationController.updateSpecialization);
+academicRouter.get('/specializations/:uuid', specializationController.getByIdSpecialization);
 academicRouter.delete('/specializations/:uuid', specializationController.deleteSpecialization);
 
 // academicRouter.get('/university-specializations', specializationController.getUniversitySpecializations);

@@ -247,6 +247,33 @@ const updateSpecialization = async (req, res) => {
   }
 };
 
+const getByIdSpecialization = async (req,res)=>{
+  try {
+    const { uuid } = req.params;
+    const result = await pool.query(
+      `SELECT * FROM specializations WHERE uuid = $1 AND is_deleted = FALSE`,
+      [uuid]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Specialization not found',
+      });
+    }
+
+    return res.json({
+      success: true,
+      specialization: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Get by id specialization error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get specialization by id',
+    });
+  }
+}
 const deleteSpecialization = async (req, res) => {
   const { uuid } = req.params;
 
@@ -1362,6 +1389,7 @@ module.exports = {
   universitySpecilization,
   createCourseFee,
   updateCourseFee,
+  getByIdSpecialization,
   deleteCourseFee,
   getCourseFeesBySpecialization,
 };

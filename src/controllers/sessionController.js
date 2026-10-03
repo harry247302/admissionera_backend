@@ -78,7 +78,33 @@ const sessionStatus = async (req,res)=>{
             message: error.message
         })   }
 }
+const updateSession = async (req,res)=>{
+    try {
+        const {id} = req.params;
+        const {status} = req.body;
+        const result = await pool.query(
+            `update session set status = $2  where id = $1`,
+            [id,status]
+        )
+        if(result.rowCount === 0){
+            return res.status(400).json({
+                success: false,
+                message: 'Failed to update session'
+            })
+        }
+        return res.status(200).json({
+            success: true,
+            message: 'Session updated successfully'
+        })
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        })
+    }
+}
 module.exports = {
     createSession,
     getSessions,
+    updateSession
 }

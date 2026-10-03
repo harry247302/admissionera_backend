@@ -1026,6 +1026,53 @@ const getFaqsByCourse = async (req, res) => {
   }
 };
 
+
+const getCoursesWithAllContents = async (req, res) => {
+  try {
+    
+    const result = await pool.query(
+      `SELECT
+    c.uuid AS course_id,
+    c.name AS course_name,
+    c.code AS course_code,
+    c.slug AS course_slug,
+    c.degree AS course_degree,
+    c.level AS course_level,
+    c.study_mode AS course_study_mode,
+    COUNT(DISTINCT cf.university_id) AS university_count
+FROM course_fees cf
+JOIN courses c
+    ON cf.course_id = c.uuid
+GROUP BY
+    c.uuid,
+    c.name,
+    c.code,
+    c.slug,
+    c.degree,
+    c.level,
+    c.study_mode
+
+ORDER BY c.name;`
+    )
+
+    return res.status(200).json({
+      success: true,
+      message: 'Courses fetched successfully',
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Get course university counts error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch course university counts",
+      error: error.message,
+    });
+  }
+};
+
+
+
 // Get All Course
 module.exports = {
   createCourse,
@@ -1035,6 +1082,7 @@ module.exports = {
   createFaq,
   getFaqsByCourse,
   createContentParagraph,
+  getCoursesWithAllContents,
   getContentParagraphsByCourse,
   deleteCourse,
   createCourseSpecializations,
