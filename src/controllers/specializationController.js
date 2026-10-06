@@ -1221,6 +1221,7 @@ const createContentParagraph = async (req, res) => {
       specialization_uuid,
       specialization_id,
       course_id,
+      counsellor_id,
       title,
       content,
       sort_order = 0,
@@ -1228,7 +1229,7 @@ const createContentParagraph = async (req, res) => {
 
     const specializationRef = specialization_uuid || specialization_id || null;
     const courseRef = course_id || null;
-
+    const counsellorRef = counsellor_id || null;
     if (!specializationRef && !courseRef) {
       return res.status(400).json({
         success: false,
