@@ -1,9 +1,11 @@
 const express = require('express');
 const counsellorRoutes = express.Router();
 const counsellorController = require('../controllers/counsellorsController');
+const { uploadCounsellorImage } = require('../middleware/uploadCounsellorImage');
 counsellorRoutes.get('/', counsellorController.getAllCounsellors);
-counsellorRoutes.post('/', counsellorController.createCounsellor);
+counsellorRoutes.post('/', uploadCounsellorImage, counsellorController.createCounsellor);
+counsellorRoutes.put('/:id', uploadCounsellorImage, counsellorController.updateCounsellor);
 counsellorRoutes.post('/counsellor-paragraphs', counsellorController.createContentForCounsellors);
-counrsellorRoutes.post('/counsellor-table', counsellorController.createTableForCounsellor);
-counrsellorRoutes.post('/counsellor-rows', counsellorController.createRowsForCounsellor);
+counsellorRoutes.post('/counsellor-table', counsellorController.createTableForCounsellor);
+counsellorRoutes.post('/counsellor-rows', counsellorController.createRowsForCounsellor);
 module.exports = counsellorRoutes;
