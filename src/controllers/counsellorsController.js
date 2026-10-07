@@ -230,27 +230,26 @@ const createContentForCounsellors = async (req,res)=>{
         const {
             counsellor_id,
             title,
+            content,
             sort_order = 0,
           } = req.body;
       
-          const counsellorRef = counsellor_id || null;
-      
-          if (!counsellorRef) {
+          if (!counsellor_id || !content || !String(content).trim()) {
             return res.status(400).json({
               success: false,
-              message: 'counsellor_id is required',
+              message: 'counsellor_id and content are required',
             });
           }
       
           const result = await pool.query(
             `
-            INSERT INTO specialization_content_tables
-              (counsellor_id, title, sort_order)
+            INSERT INTO specialization_content_paragraphs
+              (counsellor_id, title, content, sort_order)
             VALUES
-              ($1, $2, $3)
+              ($1, $2, $3, $4)
             RETURNING *
             `,
-            [counsellor_id, title, sort_order]
+            [counsellor_id, title || null, String(content).trim(), Number(sort_order) || 0]
           );
       
           return res.status(201).json({
@@ -261,7 +260,7 @@ const createContentForCounsellors = async (req,res)=>{
         
     } catch (error) {
         res.status(500).json({
-            message: 'Failed to create table',
+            message: 'Failed to create paragraph',
             error: error.message
         });
     }
@@ -292,7 +291,7 @@ const createTableForCounsellor = async (req, res) => {
           ($1, $2, $3)
         RETURNING *
         `,
-        [counsellor_id, title, sort_order]
+        [counsellor_id, title || null, Number(sort_order) || 0]
       );
   
       return res.status(201).json({
@@ -316,27 +315,35 @@ const createRowsForCounsellor = async (req, res) => {
         const {
             table_id,
             label,
-            value,
+            content,
             sort_order = 0,
         } = req.body;
 
-        if (!table_id || !label || !value) {
+        if (!table_id || !label || !content || typeof content !== 'object' || Array.isArray(content)) {
             return res.status(400).json({
                 success: false,
-                message: 'table_id, label and value are required',
+                message: 'table_id, label and content ({ column: value }) are required',
             });
         }
 
         const result = await pool.query(
             `
             INSERT INTO specialization_content_rows
-              (table_id, label, value, sort_order)
-            VALUES
-              ($1, $2, $3, $4)
+              (table_id, counsellor_id, label, content, sort_order)
+            SELECT id, counsellor_id, $2, $3::jsonb, $4
+            FROM specialization_content_tables
+            WHERE id = $1
             RETURNING *
             `,
-            [table_id, label, value, sort_order]
+            [table_id, String(label), JSON.stringify(content), Number(sort_order) || 0]
         );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Table not found',
+            });
+        }
 
         return res.status(201).json({
             success: true,
