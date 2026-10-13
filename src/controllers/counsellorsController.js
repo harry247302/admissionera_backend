@@ -151,22 +151,71 @@ const updateCounsellor = async (req, res) => {
     }
 }
 
+
 const getAllCounsellors = async (req, res) => {
-    try {
-        const counsellors = await pool.query(
-            `SELECT ${COUNSELLOR_COLUMNS} FROM counsellors ORDER BY created_at DESC`
-        );
-        res.status(200).json({
-            message: 'Counsellors fetched successfully',
-            counsellors: counsellors.rows
-        });
-    } catch (error) {
-        res.status(500).json({
-            message: 'Failed to fetch counsellors',
-            error: error.message
-        });
-    }
-}
+  try {
+      const query = `
+          SELECT
+              c.*,
+              COALESCE(
+                  (
+                      SELECT jsonb_agg(
+                          jsonb_build_object(
+                              'id', sct.id,
+                              'title', sct.title,
+                              'sort_order', sct.sort_order,
+                              'specialization_uuid', sct.specialization_uuid,
+                              'course_id', sct.course_id,
+                              'created_at', sct.created_at,
+                              'updated_at', sct.updated_at,
+                              'rows', COALESCE(
+                                  (
+                                      SELECT jsonb_agg(
+                                          jsonb_build_object(
+                                              'id', scr.id,
+                                              'table_id', scr.table_id,
+                                              'label', scr.label,
+                                              'content', scr.content,
+                                              'sort_order', scr.sort_order,
+                                              'created_at', scr.created_at,
+                                              'updated_at', scr.updated_at
+                                          )
+                                          ORDER BY scr.sort_order ASC
+                                      )
+                                      FROM specialization_content_rows scr
+                                      WHERE scr.table_id = sct.id
+                                        AND scr.counsellor_id = c.uuid
+                                  ),
+                                  '[]'::jsonb
+                              )
+                          )
+                          ORDER BY sct.sort_order ASC
+                      )
+                      FROM specialization_content_tables sct
+                      WHERE sct.counsellor_id = c.uuid
+                  ),
+                  '[]'::jsonb
+              ) AS specialization_content_tables
+          FROM counsellors c
+          ORDER BY c.created_at DESC;
+      `;
+
+      const counsellors = await pool.query(query);
+
+      res.status(200).json({
+          message: 'Counsellors fetched successfully',
+          counsellors: counsellors.rows
+      });
+  } catch (error) {
+      console.error('Error fetching counsellors:', error);
+
+      res.status(500).json({
+          message: 'Failed to fetch counsellors',
+          error: error.message
+      });
+  }
+};
+
 
 const creatParagraphsForCounsellors = async (req, res) => {
     try {
