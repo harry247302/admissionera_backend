@@ -120,4 +120,8 @@ academicRouter.get('/university-faqs/detail/:id', universityFaqsControllers.getF
 academicRouter.put('/university-faqs/:id', universityFaqsControllers.updateFaq);
 academicRouter.delete('/university-faqs/:id', universityFaqsControllers.deleteFaq);
 
+
+////////////////////////////////////////////////////////////////////////
+academicRouter.post('/course-filters', universityFaqsControllers.filterCourses);
 module.exports = academicRouter;
+
