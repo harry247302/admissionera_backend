@@ -21,36 +21,76 @@ const clearAuthCookie = (res) => {
   });
 };
 
+
 const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    console.log(name, email, password,'name, email, password');
-    console.log(req.body,'req.body');
+    const { name, email, password, role = "user" } = req.body;
+
+    // 1. Validate required fields
     if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Name, email, and password are required' });
+      return res.status(400).json({
+        success: false,
+        message: "Name, email, and password are required",
+      });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    // 2. Validate password
+    if (typeof password !== "string" || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters",
+      });
     }
 
-    const existingUser = await User.findByEmail(email);
-    if (existingUser) {
-      return res.status(409).json({ message: 'Email already registered' });
-    }
+    // 3. Normalize email
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const user = await User.create({ name, email, password });
-    const token = signToken({ id: user.id, email: user.email, role: user.role });
+    // 4. Hash password
+    const SALT_ROUNDS = 12;
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
+    // 5. Insert user into PostgreSQL
+    const result = await query(
+      `INSERT INTO users (name, email, password, role)
+       VALUES ($1, $2, $3, $4)
+       RETURNING  name, email, role, created_at, updated_at`,
+      [name.trim(), normalizedEmail, passwordHash, role]
+    );
+
+    // 6. Get the newly registered user
+    const user = result.rows[0];
+
+    // 7. Generate authentication token
+    const token = signToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    // 8. Set authentication cookie
     setAuthCookie(res, token);
 
+    // 9. Return success response
     return res.status(201).json({
-      message: 'Registration successful',
+      success: true,
+      message: "Registration successful",
       user,
     });
   } catch (err) {
-    console.error('Register error:', err);
-    return res.status(500).json({ message: 'Internal server error' });
+    console.error("Register error:", err.message);
+
+    // PostgreSQL unique constraint violation
+    if (err.code === "23505") {
+      return res.status(409).json({
+        success: false,
+        message: "Email already registered",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
 
@@ -63,14 +103,17 @@ const login = async (req, res) => {
     }
 
     const { rows } = await query(
-      `SELECT id, name, email, password_hash, role, created_at, updated_at
+      `SELECT name, email, password, role, created_at, updated_at
        FROM users
        WHERE LOWER(email) = LOWER($1)
        LIMIT 1`,
       [String(email).trim()]
     );
 
+    console.log(rows);
+
     const user = rows[0];
+
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }

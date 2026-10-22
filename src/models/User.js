@@ -28,7 +28,7 @@ const User = {
 
   async findByEmail(email) {
     const { rows } = await query(
-      `SELECT id, name, email, password_hash, role, created_at, updated_at
+      `SELECT name, email, password_hash, role, created_at, updated_at
        FROM users WHERE email = $1`,
       [email.toLowerCase()]
     );
