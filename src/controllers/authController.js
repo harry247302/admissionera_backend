@@ -1,15 +1,15 @@
 const bcrypt = require('bcryptjs');
 const env = require('../config/env');
-const { query } = require('../config/db');
+const { query, pool } = require('../config/db');
 const { signToken } = require('../utils/jwt');
 const User = require('../models/User');
 
 const setAuthCookie = (res, token) => {
-  res.cookie(env.cookie.name, token, {
+  res.cookie("admissioneradatabase", token, {
     httpOnly: true,
-    secure: env.nodeEnv === 'production',
-    sameSite: env.nodeEnv === 'production' ? 'none' : 'lax',
-    maxAge: env.cookie.maxAge,
+    secure: true,
+    sameSite: 'none',
+    maxAge: 1000 * 60 * 60 * 24 * 30, // 30 days
   });
 };
 
@@ -24,7 +24,7 @@ const clearAuthCookie = (res) => {
 
 const register = async (req, res) => {
   try {
-    const { name, email, password, role = "user" } = req.body;
+    const { name, email,phone_number,course,dob,state, password, role = "user" } = req.body;
 
     // 1. Validate required fields
     if (!name || !email || !password) {
@@ -51,10 +51,10 @@ const register = async (req, res) => {
 
     // 5. Insert user into PostgreSQL
     const result = await query(
-      `INSERT INTO users (name, email, password, role)
-       VALUES ($1, $2, $3, $4)
-       RETURNING  name, email, role, created_at, updated_at`,
-      [name.trim(), normalizedEmail, passwordHash, role]
+      `INSERT INTO users (name, email, password, phone_number, course, dob, state, role)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING  name, email, phone_number, course, dob, state, role, created_at, updated_at`,
+      [name.trim(), normalizedEmail, passwordHash, phone_number, course, dob, state, role]
     );
 
     // 6. Get the newly registered user
@@ -117,8 +117,12 @@ const login = async (req, res) => {
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+    // console.log(user);
+    // console.log(password);
+    // console.log(user.password);
+    const isValid = await bcrypt.compare(password, user.password);
+    console.log(isValid,"++++++++++++++++++++++++");
 
-    const isValid = await bcrypt.compare(password, user.password_hash);
     if (!isValid) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
@@ -164,4 +168,16 @@ const me = async (req, res) => {
   }
 };
 
-module.exports = { register, login, logout, me };
+const checkEmail = async (req, res) => {
+  try {
+    const { id } = req.user;
+    const user = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    console.log(user.rows[0],"++++++++++++++++++++++++");
+    return res.json({ user: user.rows[0] });
+  } catch (err) {
+    console.error('Check email error:', err);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+module.exports = { register, login, logout, me, checkEmail};

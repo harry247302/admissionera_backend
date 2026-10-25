@@ -2,7 +2,8 @@ const env = require('../config/env');
 const { verifyToken } = require('../utils/jwt');
 
 const authenticate = (req, res, next) => {
-  const token = req.cookies[env.cookie.name];
+  const token = req.cookies.admissioneradatabase;
+  console.log("token-----------------", req);
 
   if (!token) {
     return res.status(401).json({ message: 'Authentication required' });
@@ -14,7 +15,7 @@ const authenticate = (req, res, next) => {
       id: decoded.id,
       email: decoded.email,
       role: decoded.role,
-    };
+    };    
     return next();
   } catch (_err) {
     res.clearCookie(env.cookie.name, {
