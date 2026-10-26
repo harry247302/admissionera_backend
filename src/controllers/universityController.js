@@ -64,6 +64,7 @@ const createUniversity = async (req, res) => {
       name,
       short_name,
       code,
+        approvals,
       description,
       website,
       location,
@@ -102,9 +103,9 @@ const createUniversity = async (req, res) => {
       (
         name, short_name, description, website, location,
         logo, banner, ratings, world_rank, grade,
-        features, admission_process, career, is_active
+        features, admission_process, career, is_active, approvals
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
       `,
       [
@@ -122,6 +123,7 @@ const createUniversity = async (req, res) => {
         toTextArray(admission_process),
         toTextArray(career),
         status ? status === 'ACTIVE' : true,
+        approvals || [],
       ]
     );
 
