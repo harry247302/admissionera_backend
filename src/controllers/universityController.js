@@ -162,6 +162,7 @@ const updateUniversity = async (req, res) => {
       features,
       admission_process,
       career,
+      approvals,
       status,
     } = req.body;
 
@@ -265,6 +266,7 @@ const updateUniversity = async (req, res) => {
         admission_process = $13,
         career = $14,
         is_active = $15,
+        approvals = $16,
         updated_at = CURRENT_TIMESTAMP
       WHERE uuid = $1
       RETURNING *
@@ -313,6 +315,8 @@ const updateUniversity = async (req, res) => {
         status !== undefined
           ? status === "ACTIVE"
           : current.is_active,
+
+        approvals
       ]
     );
 
