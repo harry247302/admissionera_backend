@@ -3,6 +3,8 @@ const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
 const academicRouter = require('./academicRoutes');
 const counsellorRoutes = require('./counsellorRoutes');
+// const blogsRouter = require('./approvalsRouter');
+const approvalsRouter = require('./approvalsRouter');
 
 const router = express.Router();
 
@@ -16,5 +18,5 @@ router.use('/crm', require('./crmRoutes'));
 router.use('/academic', academicRouter);
 router.use('/counsellor', counsellorRoutes);
 router.use('/session', require('./sessionRoutes'));
-
+router.use('/approvals',approvalsRouter)
 module.exports = router;
