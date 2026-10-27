@@ -58,13 +58,73 @@ const resolveUploadedPath = async (file, bodyValue, prefix, currentPath) => {
   return currentPath || null;
 };
 
+const parseTextArray = (value) => {
+  if (value === undefined || value === null || value === "") {
+    return [];
+  }
+
+  let parsed = value;
+
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [parsed];
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw Object.assign(
+      new Error("Expected an array"),
+      { status: 400 }
+    );
+  }
+
+  return parsed
+    .map((item) => {
+      if (typeof item === "string") return item;
+
+      if (item && typeof item === "object") {
+        return (
+          item.approval_name ??
+          item.name ??
+          item.id ??
+          item.uuid ??
+          ""
+        );
+      }
+
+      return item == null ? "" : String(item);
+    })
+    .filter(Boolean);
+};
+
+// const getUniversityByUuidQuery = `
+//   SELECT
+//     u.*,
+//     COALESCE(spec.specializations, '[]'::json) AS specializations
+//   FROM universities u
+//   LEFT JOIN LATERAL (
+//     SELECT json_agg(
+//       DISTINCT jsonb_build_object(
+//         'uuid', s.uuid,
+//         'name', s.name
+//       )
+//     ) AS specializations
+//     FROM course_fees cf
+//     JOIN specializations s
+//       ON s.uuid = cf.specialization_id
+//     WHERE cf.university_id = u.uuid
+//   ) spec ON TRUE
+// `;
+
+// CREATE UNIVERSITY
 const createUniversity = async (req, res) => {
   try {
     const {
       name,
       short_name,
       code,
-        approvals,
       description,
       website,
       location,
@@ -74,77 +134,114 @@ const createUniversity = async (req, res) => {
       features,
       admission_process,
       career,
+      approvals,
       status,
     } = req.body;
 
-    if (!name) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({
         success: false,
-        message: 'University name is required',
+        message: "University name is required",
       });
     }
 
-    const logoPath = await resolveUploadedPath(
+    const logo = await resolveUploadedPath(
       req.files?.logo?.[0],
       req.body.logo,
-      'university-logo',
+      "university-logo",
       null
     );
-    const bannerPath = await resolveUploadedPath(
+
+    const banner = await resolveUploadedPath(
       req.files?.banner?.[0],
       req.body.banner,
-      'university-banner',
+      "university-banner",
       null
     );
+
+    const parsedRatings =
+      ratings == null || ratings === "" ? null : Number(ratings);
+
+    const parsedWorldRank =
+      world_rank == null || world_rank === ""
+        ? null
+        : Number(world_rank);
+
+    if (
+      parsedRatings !== null &&
+      (!Number.isFinite(parsedRatings) ||
+        parsedRatings < 0 ||
+        parsedRatings > 9.99)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid ratings value",
+      });
+    }
+
+    if (
+      parsedWorldRank !== null &&
+      (!Number.isInteger(parsedWorldRank) || parsedWorldRank < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "World rank must be a non-negative integer",
+      });
+    }
 
     const result = await pool.query(
       `
-      INSERT INTO universities
-      (
-        name, short_name, description, website, location,
+      INSERT INTO universities (
+        name, short_name, code, description, website, location,
         logo, banner, ratings, world_rank, grade,
         features, admission_process, career, is_active, approvals
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, $10, $11, $12, $13, $14, $15, $16
+      )
       RETURNING *
       `,
       [
-        name,
+        String(name).trim(),
         short_name || code || null,
+        code || null,
         description || null,
         website || null,
         location || null,
-        logoPath,
-        bannerPath,
-        ratings === '' || ratings == null ? null : Number(ratings),
-        world_rank === '' || world_rank == null ? null : Number(world_rank),
+        logo,
+        banner,
+        parsedRatings,
+        parsedWorldRank,
         grade || null,
-        toTextArray(features),
-        toTextArray(admission_process),
-        toTextArray(career),
-        status ? status === 'ACTIVE' : true,
-        approvals || [],
+        parseTextArray(features),
+        parseTextArray(admission_process),
+        parseTextArray(career),
+        status !== undefined ? status === "ACTIVE" : true,
+        parseTextArray(approvals),
       ]
     );
 
-    const university = mapUniversity(result.rows[0]);
+    const university = {
+      ...result.rows[0],
+      specializations: [],
+    };
 
     return res.status(201).json({
       success: true,
-      message: 'University created successfully',
+      message: "University created successfully",
       data: university,
       university,
     });
   } catch (error) {
-    console.error('Create university error:', error);
-    const statusCode = error.status || 500;
-    return res.status(statusCode).json({
+    console.error("Create university error:", error);
+
+    return res.status(error.status || 500).json({
       success: false,
-      message: error.message || 'Failed to create university',
+      message: error.message || "Failed to create university",
     });
   }
 };
-
 const updateUniversity = async (req, res) => {
   try {
     const { uuid } = req.params;
@@ -174,51 +271,54 @@ const updateUniversity = async (req, res) => {
       });
     }
 
-    const existing = await pool.query(
-      `
-      SELECT 
-        u.*,
-        COALESCE(
-          json_agg(
-            DISTINCT jsonb_build_object(
-              'uuid', s.uuid,
-              'name', s.name
-            )
-          ) FILTER (WHERE s.uuid IS NOT NULL),
-          '[]'::json
-        ) AS specializations
-      FROM universities u
+   
+// const existing = await pool.query(
+//   `
+//   SELECT
+//     u.*,
+//     COALESCE(
+//       spec.specializations,
+//       '[]'::json
+//     ) AS specializations
+//   FROM universities u
 
-      LEFT JOIN course_fees cf
-        ON cf.university_id = u.uuid
+//   LEFT JOIN LATERAL (
+//     SELECT
+//       json_agg(
+//         DISTINCT jsonb_build_object(
+//           'uuid', s.uuid,
+//           'name', s.name
+//         )
+//       ) AS specializations
+//     FROM course_fees cf
+//     JOIN specializations s
+//       ON s.uuid = cf.specialization_id
+//     WHERE cf.university_id = u.uuid
+//   ) spec ON TRUE
 
-      LEFT JOIN specializations s
-        ON s.uuid = cf.specialization_id
+//   WHERE u.uuid = $1
+//   `,
+//   [uuid]
+// );
 
-      WHERE u.uuid = $1
 
-      GROUP BY u.uuid
-      `,
-      [uuid]
-    );
+//     if (!existing.rows.length) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "University not found",
+//       });
+//     }
 
-    if (!existing.rows.length) {
-      return res.status(404).json({
-        success: false,
-        message: "University not found",
-      });
-    }
+//     const current = existing.rows[0];
 
-    const current = existing.rows[0];
+//     const nextName = name !== undefined ? name : current.name;
 
-    const nextName = name !== undefined ? name : current.name;
-
-    if (!nextName) {
-      return res.status(400).json({
-        success: false,
-        message: "University name is required",
-      });
-    }
+//     if (!nextName) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "University name is required",
+//       });
+//     }
 
     const logoPath = await resolveUploadedPath(
       req.files?.logo?.[0],
@@ -234,19 +334,19 @@ const updateUniversity = async (req, res) => {
       current.banner
     );
 
-    const nextRatings =
-      ratings === undefined
-        ? current.ratings
-        : ratings === "" || ratings == null
-          ? null
-          : Number(ratings);
+    // const nextRatings =
+    //   ratings === undefined
+    //     ? current.ratings
+    //     : ratings === "" || ratings == null
+    //       ? null
+    //       : Number(ratings);
 
-    const nextWorldRank =
-      world_rank === undefined
-        ? current.world_rank
-        : world_rank === "" || world_rank == null
-          ? null
-          : Number(world_rank);
+    // const nextWorldRank =
+    //   world_rank === undefined
+    //     ? current.world_rank
+    //     : world_rank === "" || world_rank == null
+    //       ? null
+    //       : Number(world_rank);
 
     const result = await pool.query(
       `
@@ -272,58 +372,40 @@ const updateUniversity = async (req, res) => {
       RETURNING *
       `,
       [
-        current.uuid,
-        nextName,
+        uuid,
+        name,
 
-        short_name !== undefined || code !== undefined
-          ? short_name || code || null
-          : current.short_name,
+        short_name !== undefined || code !== undefined,
 
-        description !== undefined
-          ? description || null
-          : current.description,
+        description !== undefined,
 
-        website !== undefined
-          ? website || null
-          : current.website,
+        website !== undefined,
 
-        location !== undefined
-          ? location || null
-          : current.location,
+        location !== undefined,
 
         logoPath,
         bannerPath,
         nextRatings,
         nextWorldRank,
 
-        grade !== undefined
-          ? grade || null
-          : current.grade,
+        grade !== undefined,
 
-        features !== undefined
-          ? toTextArray(features)
-          : current.features,
+        features !== undefined,
 
-        admission_process !== undefined
-          ? toTextArray(admission_process)
-          : current.admission_process,
+        admission_process !== undefined,
 
-        career !== undefined
-          ? toTextArray(career)
-          : current.career,
+        career !== undefined,
 
-        status !== undefined
-          ? status === "ACTIVE"
-          : current.is_active,
+        status !== undefined,
 
         approvals
       ]
     );
 
-    const university = mapUniversity(result.rows[0]);
+    // const university = mapUniversity(result.rows[0]);
 
     // Add specializations from course_fees
-    university.specializations = current.specializations;
+    // university.specializations = current.specializations;
 
     return res.status(200).json({
       success: true,

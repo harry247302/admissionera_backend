@@ -34,7 +34,7 @@ academicRouter.post(
   universityController.createUniversity
 );
 academicRouter.put(
-  '/universities/:id',
+  '/universities/:uuid',
   handleUniversityMediaUpload,
   universityController.updateUniversity
 );
