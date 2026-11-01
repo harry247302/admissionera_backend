@@ -242,9 +242,17 @@ const createUniversity = async (req, res) => {
     });
   }
 };
+
 const updateUniversity = async (req, res) => {
   try {
     const { uuid } = req.params;
+
+    if (!uuid) {
+      return res.status(400).json({
+        success: false,
+        message: "University UUID is required",
+      });
+    }
 
     const {
       name,
@@ -263,149 +271,150 @@ const updateUniversity = async (req, res) => {
       status,
     } = req.body;
 
-    // Check UUID, not id
-    if (!uuid) {
-      return res.status(400).json({
+    // 1. Fetch existing university
+    const existing = await pool.query(
+      `SELECT * FROM universities WHERE uuid = $1`,
+      [uuid]
+    );
+
+    if (!existing.rows.length) {
+      return res.status(404).json({
         success: false,
-        message: "University UUID is required",
+        message: "University not found",
       });
     }
 
-   
-// const existing = await pool.query(
-//   `
-//   SELECT
-//     u.*,
-//     COALESCE(
-//       spec.specializations,
-//       '[]'::json
-//     ) AS specializations
-//   FROM universities u
+    const current = existing.rows[0];
 
-//   LEFT JOIN LATERAL (
-//     SELECT
-//       json_agg(
-//         DISTINCT jsonb_build_object(
-//           'uuid', s.uuid,
-//           'name', s.name
-//         )
-//       ) AS specializations
-//     FROM course_fees cf
-//     JOIN specializations s
-//       ON s.uuid = cf.specialization_id
-//     WHERE cf.university_id = u.uuid
-//   ) spec ON TRUE
+    // 2. Validate name
+    const nextName =
+      name !== undefined ? String(name).trim() : current.name;
 
-//   WHERE u.uuid = $1
-//   `,
-//   [uuid]
-// );
+    if (!nextName) {
+      return res.status(400).json({
+        success: false,
+        message: "University name is required",
+      });
+    }
 
-
-//     if (!existing.rows.length) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "University not found",
-//       });
-//     }
-
-//     const current = existing.rows[0];
-
-//     const nextName = name !== undefined ? name : current.name;
-
-//     if (!nextName) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "University name is required",
-//       });
-//     }
-
-    const logoPath = await resolveUploadedPath(
+    // 3. Resolve uploaded files
+    const logo = await resolveUploadedPath(
       req.files?.logo?.[0],
       req.body.logo,
       "university-logo",
       current.logo
     );
 
-    const bannerPath = await resolveUploadedPath(
+    const banner = await resolveUploadedPath(
       req.files?.banner?.[0],
       req.body.banner,
       "university-banner",
       current.banner
     );
 
-    // const nextRatings =
-    //   ratings === undefined
-    //     ? current.ratings
-    //     : ratings === "" || ratings == null
-    //       ? null
-    //       : Number(ratings);
+    // 4. Parse and validate ratings
+    const nextRatings =
+      ratings === undefined
+        ? current.ratings
+        : ratings === null || ratings === ""
+          ? null
+          : Number(ratings);
 
-    // const nextWorldRank =
-    //   world_rank === undefined
-    //     ? current.world_rank
-    //     : world_rank === "" || world_rank == null
-    //       ? null
-    //       : Number(world_rank);
+    if (
+      nextRatings !== null &&
+      (!Number.isFinite(Number(nextRatings)) ||
+        Number(nextRatings) < 0 ||
+        Number(nextRatings) > 9.99)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid ratings value",
+      });
+    }
 
+    // 5. Parse and validate world rank
+    const nextWorldRank =
+      world_rank === undefined
+        ? current.world_rank
+        : world_rank === null || world_rank === ""
+          ? null
+          : Number(world_rank);
+
+    if (
+      nextWorldRank !== null &&
+      (!Number.isInteger(Number(nextWorldRank)) ||
+        Number(nextWorldRank) < 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "World rank must be a non-negative integer",
+      });
+    }
+
+    // 6. Update university
     const result = await pool.query(
       `
       UPDATE universities
       SET
         name = $2,
         short_name = $3,
-        description = $4,
-        website = $5,
-        location = $6,
-        logo = $7,
-        banner = $8,
-        ratings = $9,
-        world_rank = $10,
-        grade = $11,
-        features = $12,
-        admission_process = $13,
-        career = $14,
-        is_active = $15,
-        approvals = $16,
+        code = $4,
+        description = $5,
+        website = $6,
+        location = $7,
+        logo = $8,
+        banner = $9,
+        ratings = $10,
+        world_rank = $11,
+        grade = $12,
+        features = $13,
+        admission_process = $14,
+        career = $15,
+        is_active = $16,
+        approvals = $17,
         updated_at = CURRENT_TIMESTAMP
       WHERE uuid = $1
       RETURNING *
       `,
       [
         uuid,
-        name,
-
-        short_name !== undefined || code !== undefined,
-
-        description !== undefined,
-
-        website !== undefined,
-
-        location !== undefined,
-
-        logoPath,
-        bannerPath,
+        nextName,
+        short_name !== undefined
+          ? short_name
+          : current.short_name,
+        code !== undefined ? code : current.code,
+        description !== undefined
+          ? description
+          : current.description,
+        website !== undefined ? website : current.website,
+        location !== undefined ? location : current.location,
+        logo,
+        banner,
         nextRatings,
         nextWorldRank,
-
-        grade !== undefined,
-
-        features !== undefined,
-
-        admission_process !== undefined,
-
-        career !== undefined,
-
-        status !== undefined,
-
-        approvals
+        grade !== undefined ? grade : current.grade,
+        features !== undefined
+          ? parseTextArray(features)
+          : current.features,
+        admission_process !== undefined
+          ? parseTextArray(admission_process)
+          : current.admission_process,
+        career !== undefined
+          ? parseTextArray(career)
+          : current.career,
+        status !== undefined
+          ? status === "ACTIVE"
+          : current.is_active,
+        approvals !== undefined
+          ? parseTextArray(approvals)
+          : current.approvals,
       ]
     );
 
-    // const university = mapUniversity(result.rows[0]);
-
-    // Add specializations from course_fees
-    // university.specializations = current.specializations;
+    const university = {
+      ...result.rows[0],
+      specializations: [],
+    };
 
     return res.status(200).json({
       success: true,
@@ -413,18 +422,16 @@ const updateUniversity = async (req, res) => {
       data: university,
       university,
     });
-
   } catch (error) {
     console.error("Update university error:", error);
 
-    const statusCode = error.status || 500;
-
-    return res.status(statusCode).json({
+    return res.status(error.status || 500).json({
       success: false,
       message: error.message || "Failed to update university",
     });
   }
 };
+
 
 const getUniversityById = async (req, res) => {
   try {

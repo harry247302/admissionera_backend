@@ -5,6 +5,7 @@ const academicRouter = require('./academicRoutes');
 const counsellorRoutes = require('./counsellorRoutes');
 // const blogsRouter = require('./approvalsRouter');
 const approvalsRouter = require('./approvalsRouter');
+const blogRouters = require('./blogsRouter');
 
 const router = express.Router();
 
@@ -19,4 +20,7 @@ router.use('/academic', academicRouter);
 router.use('/counsellor', counsellorRoutes);
 router.use('/session', require('./sessionRoutes'));
 router.use('/approvals',approvalsRouter)
+router.use('/blogs',blogRouters)
+
+
 module.exports = router;
