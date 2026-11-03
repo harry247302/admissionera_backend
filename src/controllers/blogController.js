@@ -77,6 +77,105 @@ const createBlog = async (req, res) => {
   }
 };
 
+
+  const createBlogContentTable = async (req, res) => {
+  try {
+    const {
+      blog_id,
+      title,
+      sort_order = 0,
+    } = req.body;
+
+    if (!blog_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'blog_id is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO specialization_content_tables
+        (blog_id, title, sort_order)
+      VALUES
+        ($1, $2, $3)
+      RETURNING *
+      `,
+      [blog_id, title || null, Number(sort_order) || 0]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Blog content table created successfully',
+      data: result.rows[0],
+    });
+
+  } catch (error) {
+    console.error('Create blog content table error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create blog content table',
+      error: error.message,
+    });
+  }
+};
+
+const createContentRow = async (req, res) => {
+  try {
+    const {
+      table_id,
+      label,
+      content = {},
+      sort_order = 0,
+    } = req.body;
+
+    if (!table_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'table_id is required',
+      });
+    }
+
+    if (!label) {
+      return res.status(400).json({
+        success: false,
+        message: 'label is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO specialization_content_rows
+        (table_id, label, content, sort_order)
+      VALUES
+        ($1, $2, $3::jsonb, $4)
+      RETURNING *
+      `,
+      [
+        table_id,
+        label,
+        JSON.stringify(content || {}),
+        Number(sort_order) || 0,
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Content row created successfully',
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Create content row error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create content row',
+      error: error.message,
+    });
+  }
+};
+
 // GET ALL BLOGS
 const getBlogs = async (req, res) => {
   try {
@@ -324,6 +423,42 @@ const deleteBlog = async (req, res) => {
 };
 
 
+const getContentParagraphsByBlog = async (req, res) => {
+  try {
+    const blog_id = req.params.id || req.query.blog_id;
+
+    if (!blog_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM course_content_paragraphs
+      WHERE course_id = $1
+      ORDER BY sort_order ASC, created_at ASC
+      `,
+      [blog_id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get content paragraphs error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch content paragraphs',
+      error: error.message,
+    });
+  }
+};
 
 
 const createContentParagraph = async (req, res) => {
@@ -381,11 +516,84 @@ const createContentParagraph = async (req, res) => {
       });
   }
 };
+
+
+const getContentTablesByCourse = async (req, res) => {
+  try {
+    const courseId = req.params.courseId || req.query.course_id || null;
+    const specializationId =
+      req.params.specializationId
+      || req.query.specialization_uuid
+      || req.query.specialization_id
+      || null;
+
+    if (!courseId && !specializationId) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId or specializationId is required',
+      });
+    }
+
+    const tablesResult = await pool.query(
+      courseId
+        ? `
+          SELECT *
+          FROM specialization_content_tables
+          WHERE course_id = $1
+          ORDER BY sort_order ASC, created_at ASC
+        `
+        : `
+          SELECT *
+          FROM specialization_content_tables
+          WHERE specialization_uuid = $1
+          ORDER BY sort_order ASC, created_at ASC
+        `,
+      [courseId || specializationId]
+    );
+
+    const tables = [];
+    for (const table of tablesResult.rows) {
+      const rowsResult = await pool.query(
+        `
+        SELECT *
+        FROM specialization_content_rows
+        WHERE table_id = $1
+        ORDER BY sort_order ASC, created_at ASC
+        `,
+        [table.id]
+      );
+      tables.push({
+        ...table,
+        rows: rowsResult.rows,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: tables.length,
+      data: tables,
+    });
+  } catch (error) {
+    console.error('Get content tables error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch content tables',
+      error: error.message,
+      });
+  }
+};
+
+
 module.exports = {
+  createBlogContentTable,
   createBlog,
   getBlogs,
   createContentParagraph,
   getBlogById,
+  getContentParagraphsByBlog,
   updateBlog,
+  createContentRow,
+  getContentTablesByCourse,
   deleteBlog,
 };
