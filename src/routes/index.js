@@ -6,6 +6,7 @@ const counsellorRoutes = require('./counsellorRoutes');
 // const blogsRouter = require('./approvalsRouter');
 const approvalsRouter = require('./approvalsRouter');
 const blogRouters = require('./blogsRouter');
+const companiesRouter = require('./companiesRouter');
 
 const router = express.Router();
 
@@ -14,6 +15,7 @@ router.get('/health', (_req, res) => {
 });
 
 router.use('/auth', authRoutes);
+router.use('/companies',companiesRouter)
 router.use('/users', userRoutes);
 router.use('/crm', require('./crmRoutes'));
 router.use('/academic', academicRouter);

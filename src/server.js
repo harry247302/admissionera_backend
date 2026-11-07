@@ -10,7 +10,7 @@ const startServer = () =>
     });
 
     server.on('error', reject);
-  });
+});
 
 const start = async () => {
   try {
