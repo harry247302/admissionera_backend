@@ -1,5 +1,6 @@
 const express = require("express");
 const { companies } = require("../../data/companies");
+const { pool } = require("../config/db");
 
 const companiesRouter = express.Router();
 
