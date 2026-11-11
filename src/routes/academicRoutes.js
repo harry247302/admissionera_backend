@@ -38,6 +38,12 @@ academicRouter.put(
   handleUniversityMediaUpload,
   universityController.updateUniversity
 );
+academicRouter.post('/university-table',universityController.createUniversityContentTable)
+academicRouter.get('/university-tables/:university_uuid', universityController.getContentTablesByUniversity);
+
+academicRouter.post('/university-paragraphs',universityController.createUniversityContentParagraph)
+academicRouter.get('/get-university-paragraph',universityController.getContentParagraphsByUniversity)
+
 
 academicRouter.get('/universities/:uuid', universityController.getUniversityById);
 academicRouter.delete('/universities/:uuid', universityController.deleteUniversity);

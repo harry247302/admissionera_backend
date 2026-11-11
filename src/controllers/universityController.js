@@ -433,6 +433,202 @@ const updateUniversity = async (req, res) => {
 };
 
 
+const createUniversityContentTable = async (req, res) => {
+  try {
+    const {
+      university_uuid,
+      title,
+      sort_order = 0,
+    } = req.body;
+
+    if (!university_uuid) {
+      return res.status(400).json({
+        success: false,
+        message: 'university_uuid is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO specialization_content_tables
+        (university_uuid, title, sort_order)
+      VALUES
+        ($1, $2, $3)
+      RETURNING *
+      `,
+      [
+        university_uuid,
+        title || null,
+        Number(sort_order) || 0
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'University content table created successfully',
+      data: result.rows[0],
+    });
+
+  } catch (error) {
+    console.error('Create university content table error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create university content table',
+      error: error.message,
+    });
+  }
+};
+
+
+const getContentTablesByUniversity = async (req, res) => {
+  try {
+    const university = req.params.university_uuid
+    if (!university) {
+      return res.status(400).json({
+        success: false,
+        message: 'university is required',
+      });
+    }
+
+    const tablesResult = await pool.query(
+         `
+          SELECT *
+          FROM specialization_content_tables
+          WHERE university_uuid = $1
+          ORDER BY sort_order ASC, created_at ASC
+        `
+        
+      [university]
+    );
+
+    const tables = [];
+    for (const table of tablesResult.rows) {
+      const rowsResult = await pool.query(
+        `
+        SELECT *
+        FROM specialization_content_rows
+        WHERE table_id = $1
+        ORDER BY sort_order ASC, created_at ASC
+        `,
+        [table.id]
+      );
+      tables.push({
+        ...table,
+        rows: rowsResult.rows,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: tables.length,
+      data: tables,
+    });
+  } catch (error) {
+    console.error('Get content tables error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch content tables',
+      error: error.message,
+    });
+  }
+};
+
+const createUniversityContentParagraph = async (req, res) => {
+  try {
+    const {
+      university_uuid,
+      title,
+      content,
+      sort_order = 0
+    } = req.body;
+
+    if (!university_uuid) {
+      return res.status(400).json({
+        success: false,
+        message: "university_uuid is required"
+      });
+    }
+
+    if (!content) {
+      return res.status(400).json({
+        success: false,
+        message: "content is required"
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO specialization_content_paragraphs
+        (university_uuid, title, content, sort_order)
+      VALUES
+        ($1, $2, $3, $4)
+      RETURNING *
+      `,
+      [
+        university_uuid,
+        title || null,
+        content,
+        Number(sort_order) || 0
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "University content paragraph created successfully",
+      data: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error("Create university content paragraph error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create university content paragraph",
+      error: error.message
+    });
+  }
+};
+
+
+const getContentParagraphsByUniversity = async (req, res) => {
+  try {
+    const universityUuid = req.params.university|| req.query.university_uuid;
+
+    if (!universityUuid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selected university is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM specialization_content_paragraphs
+      WHERE university_uuid = $1
+      ORDER BY sort_order ASC, created_at ASC
+      `,
+      [universityUuid]
+    );
+
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get content paragraphs error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch content paragraphs',
+      error: error.message,
+    });
+  }
+};
+
 const getUniversityById = async (req, res) => {
   try {
     const { uuid } = req.params;
@@ -626,4 +822,4 @@ const deleteUniversity = async (req, res) => {
     });
   }
 };
-module.exports = { createUniversity, updateUniversity, getUniversities, deleteUniversity,getUniversityById };
+module.exports = {getContentTablesByUniversity,getContentParagraphsByUniversity,getContentParagraphsByUniversity,createUniversityContentParagraph, createUniversityContentTable,createUniversity, updateUniversity, getUniversities, deleteUniversity,getUniversityById };
