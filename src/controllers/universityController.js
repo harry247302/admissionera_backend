@@ -437,58 +437,79 @@ const getUniversityById = async (req, res) => {
   try {
     const { uuid } = req.params;
 
-    const result = await pool.query(
-      `
-      SELECT
-        u.*,
+    
+const result = await pool.query(
+  `
+  SELECT
+    u.*,
 
-        COALESCE(
-          (
-            SELECT jsonb_agg(
-              jsonb_build_object(
-                'uuid', c.uuid,
-                'name', c.name,
-                'code', c.code,
-
-                'fees',
-                COALESCE(
-                  (
-                    SELECT jsonb_agg(
-                      jsonb_build_object(
-                        'uuid', cf.uuid,
-                        'fee_structure_type', cf.fee_structure_type,
-                        'total_periods', cf.total_periods,
-                        'period_number', cf.period_number,
-                        'period_label', cf.period_label,
-                        'amount', cf.amount,
-                        'currency', cf.currency
-                      )
-                      ORDER BY cf.period_number
-                    )
-                    FROM course_fees cf
-                    WHERE cf.university_id = u.uuid
-                      AND cf.course_id = c.uuid
-                  ),
-                  '[]'::jsonb
+    -- Courses with fees
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'uuid', c.uuid,
+            'name', c.name,
+            'code', c.code,
+            'fees',
+            COALESCE(
+              (
+                SELECT jsonb_agg(
+                  jsonb_build_object(
+                    'uuid', cf.uuid,
+                    'fee_structure_type', cf.fee_structure_type,
+                    'total_periods', cf.total_periods,
+                    'period_number', cf.period_number,
+                    'period_label', cf.period_label,
+                    'amount', cf.amount,
+                    'currency', cf.currency
+                  )
+                  ORDER BY cf.period_number
                 )
-              )
+                FROM course_fees cf
+                WHERE cf.university_id = u.uuid
+                  AND cf.course_id = c.uuid
+              ),
+              '[]'::jsonb
             )
-            FROM courses c
-            WHERE EXISTS (
-              SELECT c.code
-              FROM course_fees cf
-              WHERE cf.university_id = u.uuid
-                AND cf.course_id = c.uuid
-            )
-          ),  
-          '[]'::jsonb
-        ) AS courses
+          )
+        )
+        FROM courses c
+        WHERE EXISTS (
+          SELECT 1
+          FROM course_fees cf
+          WHERE cf.university_id = u.uuid
+            AND cf.course_id = c.uuid
+        )
+      ),
+      '[]'::jsonb
+    ) AS courses,
 
-      FROM universities u
-      WHERE u.uuid = $1
-      `,
-      [String(uuid)]
-    );
+    -- Reference companies
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'uuid', rc.uuid,
+            'name', rc.company_name,
+            'website', rc.website,
+            'logo', rc.logo
+          )
+        )
+        FROM university_company_mapping ucm
+        INNER JOIN university_reference_companies rc
+          ON rc.uuid = ucm.company_uuid
+        WHERE ucm.university_uuid = u.uuid
+      ),
+      '[]'::jsonb
+    ) AS companies
+
+  FROM universities u
+  WHERE u.uuid = $1
+  `,
+  [String(uuid)]
+);
+
 
     if (result.rows.length === 0) {
       return res.status(404).json({
