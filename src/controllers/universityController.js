@@ -460,6 +460,7 @@ const getUniversityById = async (req, res) => {
                         'period_number', cf.period_number,
                         'period_label', cf.period_label,
                         'amount', cf.amount,
+                        'code', cf.code,
                         'currency', cf.currency
                       )
                       ORDER BY cf.period_number
