@@ -448,6 +448,7 @@ const getUniversityById = async (req, res) => {
               jsonb_build_object(
                 'uuid', c.uuid,
                 'name', c.name,
+                'code', c.code,
 
                 'fees',
                 COALESCE(
@@ -479,7 +480,7 @@ const getUniversityById = async (req, res) => {
               WHERE cf.university_id = u.uuid
                 AND cf.course_id = c.uuid
             )
-          ),
+          ),  
           '[]'::jsonb
         ) AS courses
 
