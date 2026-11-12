@@ -44,6 +44,7 @@ academicRouter.post('/university-table',universityController.createUniversityCon
 academicRouter.get('/university-tables/:university_uuid', universityController.getContentTablesByUniversity);
 
 academicRouter.post('/university-paragraphs',universityController.createUniversityContentParagraph)
+academicRouter.get('/university-paragraphs/:university_uuid', universityController.getContentParagraphsByUniversity);
 
 academicRouter.get('/universities/:uuid', universityController.getUniversityById);
 academicRouter.delete('/universities/:uuid', universityController.deleteUniversity);

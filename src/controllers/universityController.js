@@ -492,13 +492,12 @@ const getContentTablesByUniversity = async (req, res) => {
     }
 
     const tablesResult = await pool.query(
-         `
-          SELECT *
-          FROM specialization_content_tables
-          WHERE university_uuid = $1
-          ORDER BY sort_order ASC, created_at ASC
-        `
-        
+      `
+      SELECT *
+      FROM specialization_content_tables
+      WHERE university_uuid = $1
+      ORDER BY sort_order ASC, created_at ASC
+      `,
       [university]
     );
 
@@ -591,8 +590,41 @@ const createUniversityContentParagraph = async (req, res) => {
   }
 };
 
+const getContentParagraphsByUniversity = async (req, res) => {
+  try {
+    const university = req.params.university_uuid;
+    if (!university) {
+      return res.status(400).json({
+        success: false,
+        message: 'university_uuid is required',
+      });
+    }
 
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM specialization_content_paragraphs
+      WHERE university_uuid = $1
+      ORDER BY sort_order ASC, created_at ASC
+      `,
+      [university]
+    );
 
+    return res.status(200).json({
+      success: true,
+      count: result.rows.length,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error('Get university content paragraphs error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch university content paragraphs',
+      error: error.message,
+    });
+  }
+};
 
 const getUniversityById = async (req, res) => {
   try {
@@ -787,4 +819,14 @@ const deleteUniversity = async (req, res) => {
     });
   }
 };
-module.exports = {getContentTablesByUniversity,getContentParagraphsByUniversity,getContentParagraphsByUniversity,createUniversityContentParagraph, createUniversityContentTable,createUniversity, updateUniversity, getUniversities, deleteUniversity,getUniversityById };
+module.exports = {
+  getContentTablesByUniversity,
+  getContentParagraphsByUniversity,
+  createUniversityContentParagraph,
+  createUniversityContentTable,
+  createUniversity,
+  updateUniversity,
+  getUniversities,
+  deleteUniversity,
+  getUniversityById,
+};
