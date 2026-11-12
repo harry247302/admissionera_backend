@@ -896,23 +896,32 @@ const createContentParagraph = async (req, res) => {
 
 const getContentParagraphsByCourse = async (req, res) => {
   try {
-    const courseId = req.params.courseId || req.query.course_id;
+    const courseId = req.params.courseId || null;
+    const universityId = req.query.university_uuid 
 
-    if (!courseId) {
+    if (!courseId && universityId ) {
       return res.status(400).json({
         success: false,
-        message: 'courseId is required',
+        message: 'courseId and university is required',
       });
     }
 
     const result = await pool.query(
+      courseId?
       `
+      
       SELECT *
       FROM course_content_paragraphs
       WHERE course_id = $1
       ORDER BY sort_order ASC, created_at ASC
+      `:
+      `
+        SELECT *
+      FROM course_content_paragraphs
+      WHERE university_uuid = $1
+      ORDER BY sort_order ASC, created_at ASC
       `,
-      [courseId]
+      [courseId || universityId]
     );
 
     return res.status(200).json({

@@ -592,42 +592,7 @@ const createUniversityContentParagraph = async (req, res) => {
 };
 
 
-const getContentParagraphsByUniversity = async (req, res) => {
-  try {
-    const universityUuid = req.params.university|| req.query.university_uuid;
 
-    if (!universityUuid) {
-      return res.status(400).json({
-        success: false,
-        message: 'Selected university is required',
-      });
-    }
-
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM specialization_content_paragraphs
-      WHERE university_uuid = $1
-      ORDER BY sort_order ASC, created_at ASC
-      `,
-      [universityUuid]
-    );
-
-    return res.status(200).json({
-      success: true,
-      count: result.rows.length,
-      data: result.rows,
-    });
-  } catch (error) {
-    console.error('Get content paragraphs error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch content paragraphs',
-      error: error.message,
-    });
-  }
-};
 
 const getUniversityById = async (req, res) => {
   try {
