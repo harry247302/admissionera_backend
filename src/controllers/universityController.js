@@ -703,6 +703,34 @@ SELECT
       '[]'::jsonb
     ) AS companies,
 
+
+
+/* =========================
+   UNIVERSITY FAQs
+   ========================= */
+COALESCE(
+  (
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'id', uf.id,
+        'question', uf.question,
+        'answer', uf.answer,
+        'display', uf.display,
+        'is_active', uf.is_active,
+        'course_uuid', uf.course_uuid,
+        'created_at', uf.created_at,
+        'updated_at', uf.updated_at
+      )
+      ORDER BY uf.created_at DESC
+    )
+    FROM universities_faqs uf
+    WHERE uf.university_uuid = u.uuid
+      AND uf.is_active = true
+  ),
+  '[]'::jsonb
+) AS faqs,
+
+
     /* =========================
        CONTENT PARAGRAPHS
        ========================= */
