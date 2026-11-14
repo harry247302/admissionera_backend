@@ -633,160 +633,152 @@ const getUniversityById = async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT
-        u.*,
+   
+SELECT
+    u.*,
 
-        /* =========================
-           COURSES WITH FEES
-           ========================= */
-        COALESCE(
-          (
-            SELECT jsonb_agg(
-              jsonb_build_object(
-                'uuid', c.uuid,
-                'name', c.name,
-                'code', c.code,
-                'fees',
-                COALESCE(
-                  (
-                    SELECT jsonb_agg(
-                      jsonb_build_object(
-                        'uuid', cf.uuid,
-                        'fee_structure_type', cf.fee_structure_type,
-                        'total_periods', cf.total_periods,
-                        'period_number', cf.period_number,
-                        'period_label', cf.period_label,
-                        'amount', cf.amount,
-                        'currency', cf.currency
-                      )
-                      ORDER BY cf.period_number
-                    )
-                    FROM course_fees cf
-                    WHERE cf.university_id = u.uuid
-                      AND cf.course_id = c.uuid
-                  ),
-                  '[]'::jsonb
-                )
-              )
-            )
-            FROM courses c
-            WHERE EXISTS (
-              SELECT 1
-              FROM course_fees cf
-              WHERE cf.university_id = u.uuid
-                AND cf.course_id = c.uuid
-            )
-          ),
-          '[]'::jsonb
-        ) AS courses,
-
-
-        /* =========================
-           REFERENCE COMPANIES
-           ========================= */
-        COALESCE(
-          (
-            SELECT jsonb_agg(
-              jsonb_build_object(
-                'uuid', rc.uuid,
-                'name', rc.company_name,
-                'website', rc.website,
-                'logo', rc.logo
-              )
-            )
-            FROM university_company_mapping ucm
-            INNER JOIN university_reference_companies rc
-              ON rc.uuid = ucm.company_uuid
-            WHERE ucm.university_uuid = u.uuid
-          ),
-          '[]'::jsonb
-        ) AS companies,
-
-
-        /* =========================
-           CONTENT PARAGRAPHS
-           ========================= */
-        COALESCE(
-          (
-            SELECT jsonb_agg(
-              jsonb_build_object(
-                'id', scp.id,
-                'title', scp.title,
-                'content', scp.content,
-                'sort_order', scp.sort_order,
-                'created_at', scp.created_at,
-                'updated_at', scp.updated_at
-              )
-              ORDER BY scp.sort_order
-            )
-            FROM specialization_content_paragraphs scp
-            WHERE scp.university_uuid = u.uuid
-          ),
-          '[]'::jsonb
-        ) AS specialization_content_paragraphs,
-
-
-        /* =========================
-           CONTENT TABLES WITH ROWS
-           ========================= */
-        COALESCE(
-          table_data.specialization_content_tables,
-          '[]'::jsonb
-        ) AS specialization_content_tables
-
-
-      FROM universities u
-
-
-      /* =========================
-         UNIVERSITY CONTENT TABLES
-         ========================= */
-      LEFT JOIN LATERAL (
-        SELECT
-          jsonb_agg(
-            jsonb_build_object(
-              'id', sct.id,
-              'title', sct.title,
-              'sort_order', sct.sort_order,
-              'university_uuid', sct.university_uuid,
-              'created_at', sct.created_at,
-              'updated_at', sct.updated_at,
-
-              /* TABLE ROWS */
-              'rows',
-              COALESCE(
-                (
-                  SELECT jsonb_agg(
-                    jsonb_build_object(
-                      'id', scr.id,
-                      'label', scr.label,
-                      'content', scr.content,
-                      'sort_order', scr.sort_order
-                    )
-                    ORDER BY scr.sort_order
+    /* =========================
+       COURSES WITH FEES
+       ========================= */
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'uuid', c.uuid,
+            'name', c.name,
+            'code', c.code,
+            'fees',
+            COALESCE(
+              (
+                SELECT jsonb_agg(
+                  jsonb_build_object(
+                    'uuid', cf.uuid,
+                    'fee_structure_type', cf.fee_structure_type,
+                    'total_periods', cf.total_periods,
+                    'period_number', cf.period_number,
+                    'period_label', cf.period_label,
+                    'amount', cf.amount,
+                    'currency', cf.currency
                   )
-                  FROM specialization_content_rows scr
-                  WHERE scr.table_id = sct.id
-                ),
-                '[]'::jsonb
-              )
+                  ORDER BY cf.period_number
+                )
+                FROM course_fees cf
+                WHERE cf.university_id = u.uuid
+                  AND cf.course_id = c.uuid
+              ),
+              '[]'::jsonb
             )
-            ORDER BY sct.sort_order
-          ) AS specialization_content_tables
+          )
+          ORDER BY c.name
+        )
+        FROM courses c
+        WHERE EXISTS (
+          SELECT 1
+          FROM course_fees cf
+          WHERE cf.university_id = u.uuid
+            AND cf.course_id = c.uuid
+        )
+      ),
+      '[]'::jsonb
+    ) AS courses,
 
-        FROM specialization_content_tables sct
+    /* =========================
+       REFERENCE COMPANIES
+       ========================= */
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'uuid', rc.uuid,
+            'name', rc.company_name,
+            'website', rc.website,
+            'logo', rc.logo
+          )
+        )
+        FROM university_company_mapping ucm
+        INNER JOIN university_reference_companies rc
+          ON rc.uuid = ucm.company_uuid
+        WHERE ucm.university_uuid = u.uuid
+      ),
+      '[]'::jsonb
+    ) AS companies,
 
-        WHERE sct.university_uuid = u.uuid
+    /* =========================
+       CONTENT PARAGRAPHS
+       ========================= */
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', scp.id,
+            'title', scp.title,
+            'content', scp.content,
+            'sort_order', scp.sort_order,
+            'created_at', scp.created_at,
+            'updated_at', scp.updated_at
+          )
+          ORDER BY scp.sort_order
+        )
+        FROM specialization_content_paragraphs scp
+        WHERE scp.university_uuid = u.uuid
+      ),
+      '[]'::jsonb
+    ) AS specialization_content_paragraphs,
 
-      ) table_data ON true
+    /* =========================
+       CONTENT TABLES WITH ROWS
+       ========================= */
+    COALESCE(
+      table_data.specialization_content_tables,
+      '[]'::jsonb
+    ) AS specialization_content_tables
 
+FROM universities u
 
-      /* =========================
-         FETCH UNIVERSITY BY UUID
-         ========================= */
-      WHERE u.uuid = $1
+/* =========================
+   UNIVERSITY CONTENT TABLES
+   ========================= */
+LEFT JOIN LATERAL (
+    SELECT
+      jsonb_agg(
+        jsonb_build_object(
+          'id', sct.id,
+          'title', sct.title,
+          'sort_order', sct.sort_order,
+          'university_uuid', sct.university_uuid,
+          'created_at', sct.created_at,
+          'updated_at', sct.updated_at,
 
-      LIMIT 1;
+          'rows',
+          COALESCE(
+            (
+              SELECT jsonb_agg(
+                jsonb_build_object(
+                  'id', scr.id,
+                  'label', scr.label,
+                  'content', scr.content,
+                  'sort_order', scr.sort_order
+                )
+                ORDER BY scr.sort_order
+              )
+              FROM specialization_content_rows scr
+              WHERE scr.table_id = sct.id
+            ),
+            '[]'::jsonb
+          )
+        )
+        ORDER BY sct.sort_order
+      ) AS specialization_content_tables
+
+    FROM specialization_content_tables sct
+    WHERE sct.university_uuid = u.uuid
+
+) table_data ON true
+
+WHERE u.uuid = $1
+
+LIMIT 1;
+
       `,
       [String(uuid)]
     );
