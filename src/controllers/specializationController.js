@@ -532,10 +532,7 @@ const createCourseFee = async (req, res) => {
       period_label,
       periodLabel,
       amount,
-      per_semester_fee,
-      per_year_fee,
-      total_sem,
-      total_years,
+      one_time_fee,
       currency = 'INR',
     } = req.body;
 
@@ -548,6 +545,7 @@ const createCourseFee = async (req, res) => {
     const periodNo = period_number ?? periodNumber ?? null;
     const label = period_label ?? periodLabel ?? null;
     const summary = pickFeeSummaryFields(req.body);
+    const feeAmount = toNullableNumber(amount ?? one_time_fee);
 
     if (!universityRef) {
       return res.status(400).json({
@@ -584,7 +582,7 @@ const createCourseFee = async (req, res) => {
       });
     }
 
-    if (amount === undefined || amount === null || amount === '' || Number.isNaN(Number(amount))) {
+    if (feeAmount === null) {
       return res.status(400).json({
         success: false,
         message: 'amount is required',
@@ -650,10 +648,10 @@ const createCourseFee = async (req, res) => {
         specializationUuid,
         sessionUuid,
         structureType,
-        periods === '' || periods == null ? null : Number(periods),
-        periodNo === '' || periodNo == null ? null : Number(periodNo),
+        toNullableNumber(periods),
+        toNullableNumber(periodNo),
         label || null,
-        Number(amount),
+        feeAmount,
         currency || 'INR',
         summary.perSemesterFee,
         summary.perYearFee,
@@ -700,11 +698,11 @@ const updateCourseFee = async (req, res) => {
       period_label,
       periodLabel,
       amount,
+      currency,
       per_semester_fee,
       per_year_fee,
       total_sem,
       total_years,
-      currency,
     } = req.body;
 
     const existing = await pool.query(
@@ -858,8 +856,8 @@ const updateCourseFee = async (req, res) => {
         nextSpecializationId,
         nextSessionId,
         nextStructureType,
-        nextTotalPeriods === '' || nextTotalPeriods == null ? null : Number(nextTotalPeriods),
-        nextPeriodNumber === '' || nextPeriodNumber == null ? null : Number(nextPeriodNumber),
+        toNullableNumber(nextTotalPeriods),
+        toNullableNumber(nextPeriodNumber),
         nextPeriodLabel || null,
         Number(nextAmount),
         nextCurrency || 'INR',
@@ -923,7 +921,7 @@ const deleteCourseFee = async (req, res) => {
 const getCourseFeesBySpecialization = async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100);
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 1000);
     const offset = (page - 1) * limit;
 
     const data = await pool.query(
