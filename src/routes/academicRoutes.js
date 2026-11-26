@@ -55,6 +55,13 @@ academicRouter.delete('/courses-fees/:uuid', specializationController.deleteCour
 
 academicRouter.post('/course-tables', specializationController.createContentTable);
 academicRouter.post('/course-table-rows', specializationController.createContentRow);
+academicRouter.post('/course-fees-tables', specializationController.createCourseFeesContentTable);
+academicRouter.get('/course-fees-tables/:courseFeesUuid', specializationController.getCourseFeesContentTables);
+academicRouter.put('/course-fees-tables/:id', specializationController.updateCourseFeesContentTable);
+academicRouter.delete('/course-fees-tables/:id', specializationController.deleteCourseFeesContentTable);
+academicRouter.post('/course-fees-table-rows', specializationController.createCourseFeesContentRow);
+academicRouter.put('/course-fees-table-rows/:id', specializationController.updateCourseFeesContentRow);
+academicRouter.delete('/course-fees-table-rows/:id', specializationController.deleteCourseFeesContentRow);
 academicRouter.get('/course-tables/:courseId', specializationController.getContentTablesByCourse);
 academicRouter.delete('/course-tables/by-course/:courseId', specializationController.deleteContentTablesByParent);
 

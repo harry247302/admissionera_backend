@@ -586,12 +586,9 @@ const SPECIALIZATIONS_LATERAL = `
         json_build_object(
           'uuid', cf.uuid,
           'feeStructureType', cf.fee_structure_type,
-          'totalPeriods', cf.total_periods,
-          'periodNumber', cf.period_number,
-          'periodLabel', cf.period_label,
           'amount', cf.amount,
           'currency', cf.currency
-        ) ORDER BY cf.period_number ASC, cf.id ASC
+        ) ORDER BY cf.created_at ASC, cf.id ASC
       ) AS fees
       FROM course_fees cf
       WHERE cf.specialization_id = s.uuid

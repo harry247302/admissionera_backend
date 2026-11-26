@@ -654,13 +654,10 @@ SELECT
                   jsonb_build_object(
                     'uuid', cf.uuid,
                     'fee_structure_type', cf.fee_structure_type,
-                    'total_periods', cf.total_periods,
-                    'period_number', cf.period_number,
-                    'period_label', cf.period_label,
                     'amount', cf.amount,
                     'currency', cf.currency
                   )
-                  ORDER BY cf.period_number
+                  ORDER BY cf.created_at
                 )
                 FROM course_fees cf
                 WHERE cf.university_id = u.uuid

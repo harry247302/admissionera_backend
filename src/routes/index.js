@@ -7,6 +7,7 @@ const counsellorRoutes = require('./counsellorRoutes');
 const approvalsRouter = require('./approvalsRouter');
 const blogRouters = require('./blogsRouter');
 const companiesRouter = require('./companiesRouter');
+const courseRouters = require('./courseRouters');
 
 const router = express.Router();
 
@@ -23,6 +24,7 @@ router.use('/counsellor', counsellorRoutes);
 router.use('/session', require('./sessionRoutes'));
 router.use('/approvals',approvalsRouter)
 router.use('/blogs',blogRouters)
+router.use('/courses',courseRouters)
 
 
 module.exports = router;

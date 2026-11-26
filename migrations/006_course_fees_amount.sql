@@ -1,0 +1,2 @@
+ALTER TABLE course_fees
+  ADD COLUMN IF NOT EXISTS amount numeric(12, 2) NOT NULL DEFAULT 0;

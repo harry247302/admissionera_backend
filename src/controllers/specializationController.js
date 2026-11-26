@@ -434,29 +434,15 @@ const universitySpecilization = async (req, res) => {
 const FEE_STRUCTURE_TYPES = new Set(['yearly', 'semester', 'one_time']);
 
 const COURSE_FEE_COLUMNS = `
-  uuid, university_id, course_id, specialization_id, session_id,
-  fee_structure_type, total_periods, period_number, period_label,
-  amount, currency,
-  per_seme_fees, per_year_fees, total_sem, total_years,
-  created_at, updated_at
+  id, uuid, university_id, course_id, specialization_id, session_id,
+  fee_structure_type, amount, currency, created_at, updated_at
 `;
 
-const toNullableNumber = (value) => {
+const toFeeAmount = (value) => {
   if (value === undefined || value === null || value === '') return null;
   const num = Number(value);
-  return Number.isNaN(num) ? null : num;
+  return Number.isFinite(num) ? num : null;
 };
-
-const pickFeeSummaryFields = (body = {}) => ({
-  perSemesterFee: toNullableNumber(
-    body.per_semester_fee ?? body.perSemesterFee ?? body.per_seme_fees ?? body.perSemeFees
-  ),
-  perYearFee: toNullableNumber(
-    body.per_year_fee ?? body.perYearFee ?? body.per_year_fees ?? body.perYearFees
-  ),
-  totalSem: toNullableNumber(body.total_sem ?? body.totalSem),
-  totalYears: toNullableNumber(body.total_years ?? body.totalYears),
-});
 
 const normalizeFeeStructureType = (value) => {
   if (!value) return null;
@@ -525,12 +511,6 @@ const createCourseFee = async (req, res) => {
       sessionId,
       fee_structure_type,
       feeStructureType,
-      total_periods,
-      totalPeriods,
-      period_number,
-      periodNumber,
-      period_label,
-      periodLabel,
       amount,
       one_time_fee,
       currency = 'INR',
@@ -541,11 +521,7 @@ const createCourseFee = async (req, res) => {
     const specializationRef = specialization_id || specializationId;
     const sessionRef = session_id || sessionId;
     const structureType = normalizeFeeStructureType(fee_structure_type || feeStructureType);
-    const periods = total_periods ?? totalPeriods ?? null;
-    const periodNo = period_number ?? periodNumber ?? null;
-    const label = period_label ?? periodLabel ?? null;
-    const summary = pickFeeSummaryFields(req.body);
-    const feeAmount = toNullableNumber(amount ?? one_time_fee);
+    const feeAmount = toFeeAmount(amount ?? one_time_fee);
 
     if (!universityRef) {
       return res.status(400).json({
@@ -582,7 +558,7 @@ const createCourseFee = async (req, res) => {
       });
     }
 
-    if (feeAmount === null) {
+    if (feeAmount === null || feeAmount <= 0) {
       return res.status(400).json({
         success: false,
         message: 'amount is required',
@@ -629,17 +605,10 @@ const createCourseFee = async (req, res) => {
         specialization_id,
         session_id,
         fee_structure_type,
-        total_periods,
-        period_number,
-        period_label,
         amount,
-        currency,
-        per_seme_fees,
-        per_year_fees,
-        total_sem,
-        total_years
+        currency
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING ${COURSE_FEE_COLUMNS}
       `,
       [
@@ -648,15 +617,8 @@ const createCourseFee = async (req, res) => {
         specializationUuid,
         sessionUuid,
         structureType,
-        toNullableNumber(periods),
-        toNullableNumber(periodNo),
-        label || null,
         feeAmount,
         currency || 'INR',
-        summary.perSemesterFee,
-        summary.perYearFee,
-        summary.totalSem,
-        summary.totalYears,
       ]
     );
 
@@ -691,18 +653,9 @@ const updateCourseFee = async (req, res) => {
       sessionId,
       fee_structure_type,
       feeStructureType,
-      total_periods,
-      totalPeriods,
-      period_number,
-      periodNumber,
-      period_label,
-      periodLabel,
       amount,
+      one_time_fee,
       currency,
-      per_semester_fee,
-      per_year_fee,
-      total_sem,
-      total_years,
     } = req.body;
 
     const existing = await pool.query(
@@ -788,43 +741,17 @@ const updateCourseFee = async (req, res) => {
       nextStructureType = normalized;
     }
 
-    const nextTotalPeriods =
-      total_periods !== undefined || totalPeriods !== undefined
-        ? (total_periods ?? totalPeriods)
-        : current.total_periods;
-    const nextPeriodNumber =
-      period_number !== undefined || periodNumber !== undefined
-        ? (period_number ?? periodNumber)
-        : current.period_number;
-    const nextPeriodLabel =
-      period_label !== undefined || periodLabel !== undefined
-        ? (period_label ?? periodLabel)
-        : current.period_label;
-    const nextAmount = amount !== undefined ? amount : current.amount;
     const nextCurrency = currency !== undefined ? currency : current.currency;
-    const summary = pickFeeSummaryFields(req.body);
-    const nextPerSemesterFee =
-      per_semester_fee !== undefined || req.body.perSemesterFee !== undefined || req.body.per_seme_fees !== undefined
-        ? summary.perSemesterFee
-        : current.per_seme_fees;
-    const nextPerYearFee =
-      per_year_fee !== undefined || req.body.perYearFee !== undefined || req.body.per_year_fees !== undefined
-        ? summary.perYearFee
-        : current.per_year_fees;
-    const nextTotalSem =
-      total_sem !== undefined || req.body.totalSem !== undefined
-        ? summary.totalSem
-        : current.total_sem;
-    const nextTotalYears =
-      total_years !== undefined || req.body.totalYears !== undefined
-        ? summary.totalYears
-        : current.total_years;
-
-    if (nextAmount === null || nextAmount === '' || Number.isNaN(Number(nextAmount))) {
-      return res.status(400).json({
-        success: false,
-        message: 'amount is required',
-      });
+    let nextAmount = current.amount;
+    if (amount !== undefined || one_time_fee !== undefined) {
+      const parsed = toFeeAmount(amount ?? one_time_fee);
+      if (parsed === null || parsed <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'amount is required',
+        });
+      }
+      nextAmount = parsed;
     }
 
     const result = await pool.query(
@@ -836,15 +763,8 @@ const updateCourseFee = async (req, res) => {
         specialization_id = $4,
         session_id = $5,
         fee_structure_type = $6,
-        total_periods = $7,
-        period_number = $8,
-        period_label = $9,
-        amount = $10,
-        currency = $11,
-        per_seme_fees = $12,
-        per_year_fees = $13,
-        total_sem = $14,
-        total_years = $15,
+        amount = $7,
+        currency = $8,
         updated_at = CURRENT_TIMESTAMP
       WHERE uuid = $1
       RETURNING ${COURSE_FEE_COLUMNS}
@@ -856,15 +776,8 @@ const updateCourseFee = async (req, res) => {
         nextSpecializationId,
         nextSessionId,
         nextStructureType,
-        toNullableNumber(nextTotalPeriods),
-        toNullableNumber(nextPeriodNumber),
-        nextPeriodLabel || null,
-        Number(nextAmount),
+        nextAmount,
         nextCurrency || 'INR',
-        nextPerSemesterFee,
-        nextPerYearFee,
-        nextTotalSem,
-        nextTotalYears,
       ]
     );
 
@@ -924,22 +837,45 @@ const getCourseFeesBySpecialization = async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 1000);
     const offset = (page - 1) * limit;
 
+    const filters = [];
+    const params = [];
+
+    const universityRef = req.query.university_id || req.query.universityId;
+    const courseRef = req.query.course_id || req.query.courseId;
+    const specializationRef = req.query.specialization_id || req.query.specializationId;
+    const sessionRef = req.query.session_id || req.query.sessionId;
+
+    if (universityRef) {
+      params.push(String(universityRef));
+      filters.push(`cf.university_id::text = $${params.length}`);
+    }
+    if (courseRef) {
+      params.push(String(courseRef));
+      filters.push(`cf.course_id::text = $${params.length}`);
+    }
+    if (specializationRef) {
+      params.push(String(specializationRef));
+      filters.push(`cf.specialization_id::text = $${params.length}`);
+    }
+    if (sessionRef) {
+      params.push(String(sessionRef));
+      filters.push(`cf.session_id::text = $${params.length}`);
+    }
+
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+    params.push(limit, offset);
+
     const data = await pool.query(
       `
       SELECT
           cf.id,
           cf.uuid,
           cf.fee_structure_type,
-          cf.total_periods,
-          cf.period_number,
-          cf.period_label,
           cf.amount,
           cf.currency,
+          cf.created_at,
+          cf.updated_at,
           cf.session_id,
-          cf.per_seme_fees,
-          cf.per_year_fees,
-          cf.total_sem,
-          cf.total_years,
 
           u.id AS university_numeric_id,
           u.uuid AS university_id,
@@ -969,12 +905,13 @@ const getCourseFeesBySpecialization = async (req, res) => {
       LEFT JOIN session sess
           ON sess.id = cf.session_id
 
+      ${where}
       ORDER BY cf.id DESC
 
-      LIMIT $1
-      OFFSET $2;
+      LIMIT $${params.length - 1}
+      OFFSET $${params.length};
       `,
-      [limit, offset]
+      params
     );
 
     return res.json({
@@ -1098,7 +1035,324 @@ const createContentRow = async (req, res) => {
     });
   }
 };
+const createCourseFeesContentRow = async (req, res) => {
+  try {
+    const {
+      table_id,
+      label,
+      content = {},
+      sort_order = 0,
+    } = req.body;
 
+    if (!table_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'table_id is required',
+      });
+    }
+
+    if (!label) {
+      return res.status(400).json({
+        success: false,
+        message: 'label is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO specialization_content_rows
+        (table_id, label, content, sort_order)
+      VALUES
+        ($1, $2, $3::jsonb, $4)
+      RETURNING *
+      `,
+      [
+        table_id,
+        label,
+        JSON.stringify(content || {}),
+        Number(sort_order) || 0,
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Course fees content row created successfully',
+      data: result.rows[0],
+    });
+
+  } catch (error) {
+    console.error('Create course fees content row error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create course fees content row',
+      error: error.message,
+    });
+  }
+};
+
+const getCourseFeesContentTables = async (req, res) => {
+  try {
+    const courseFeesUuid = req.params.courseFeesUuid;
+
+    if (!courseFeesUuid) {
+      return res.status(400).json({
+        success: false,
+        message: 'course_fees_uuid is required',
+      });
+    }
+
+    const tablesResult = await pool.query(
+      `
+      SELECT *
+      FROM specialization_content_tables
+      WHERE course_fees_uuid = $1
+      ORDER BY sort_order ASC, created_at ASC
+      `,
+      [courseFeesUuid]
+    );
+
+    const tables = [];
+    for (const table of tablesResult.rows) {
+      const rowsResult = await pool.query(
+        `
+        SELECT *
+        FROM specialization_content_rows
+        WHERE table_id = $1
+        ORDER BY sort_order ASC, created_at ASC
+        `,
+        [table.id]
+      );
+      tables.push({
+        ...table,
+        rows: rowsResult.rows,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: tables.length,
+      data: tables,
+    });
+  } catch (error) {
+    console.error('Get course fees content tables error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch course fees content tables',
+      error: error.message,
+    });
+  }
+};
+
+const updateCourseFeesContentTable = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, sort_order = 0 } = req.body;
+
+    const result = await pool.query(
+      `
+      UPDATE specialization_content_tables
+      SET
+        title = $2,
+        sort_order = $3,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id, title || null, Number(sort_order) || 0]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course fees content table not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Course fees content table updated successfully',
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Update course fees content table error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update course fees content table',
+      error: error.message,
+    });
+  }
+};
+
+const deleteCourseFeesContentTable = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `
+      DELETE FROM specialization_content_tables
+      WHERE id = $1
+      RETURNING id
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course fees content table not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Course fees content table deleted successfully',
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Delete course fees content table error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete course fees content table',
+      error: error.message,
+    });
+  }
+};
+
+const updateCourseFeesContentRow = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { label, content = {}, sort_order = 0 } = req.body;
+
+    if (!label) {
+      return res.status(400).json({
+        success: false,
+        message: 'label is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE specialization_content_rows
+      SET
+        label = $2,
+        content = $3::jsonb,
+        sort_order = $4,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id, label, JSON.stringify(content || {}), Number(sort_order) || 0]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course fees content row not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Course fees content row updated successfully',
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Update course fees content row error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update course fees content row',
+      error: error.message,
+    });
+  }
+};
+
+const deleteCourseFeesContentRow = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `
+      DELETE FROM specialization_content_rows
+      WHERE id = $1
+      RETURNING id
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course fees content row not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Course fees content row deleted successfully',
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Delete course fees content row error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete course fees content row',
+      error: error.message,
+    });
+  }
+};
+
+const createCourseFeesContentTable = async (req, res) => {
+  try {
+    const {
+      course_fees_uuid,
+      title,
+      sort_order = 0,
+    } = req.body;
+
+    if (!course_fees_uuid) {
+      return res.status(400).json({
+        success: false,
+        message: 'course_fees_uuid is required',
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO specialization_content_tables 
+        (course_fees_uuid, title, sort_order)
+      VALUES
+        ($1, $2, $3)
+      RETURNING *
+      `,
+      [
+        course_fees_uuid,
+        title || null,
+        Number(sort_order) || 0,
+      ]
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: 'Course fees content table created successfully',
+      data: result.rows[0],
+    });
+
+  } catch (error) {
+    console.error('Create course fees content table error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create course fees content table',
+      error: error.message,
+    });
+  }
+};
 const getContentTablesByCourse = async (req, res) => {
   try {
     const courseId = req.params.courseId || req.query.course_id || null;
@@ -1385,6 +1639,13 @@ module.exports = {
   updateSpecialization,
   deleteSpecialization,
   getUniversitySpecializations,
+  createCourseFeesContentTable,
+  createCourseFeesContentRow,
+  getCourseFeesContentTables,
+  updateCourseFeesContentTable,
+  deleteCourseFeesContentTable,
+  updateCourseFeesContentRow,
+  deleteCourseFeesContentRow,
   universitySpecilization,
   createCourseFee,
   updateCourseFee,
